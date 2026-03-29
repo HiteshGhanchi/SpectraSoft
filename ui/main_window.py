@@ -112,12 +112,12 @@ class MainWindow(QMainWindow):
         self._group_panel.setFixedWidth(210)
         h.addWidget(self._group_panel)
 
-        # Thin vertical divider
-        div = QFrame()
-        div.setFrameShape(QFrame.Shape.VLine)
-        div.setFrameShadow(QFrame.Shadow.Sunken)
-        div.setStyleSheet("color:#aaa;")
-        h.addWidget(div)
+        # Thin vertical divider (CHANGED TO self._div)
+        self._div = QFrame()
+        self._div.setFrameShape(QFrame.Shape.VLine)
+        self._div.setFrameShadow(QFrame.Shadow.Sunken)
+        self._div.setStyleSheet("color:#aaa;")
+        h.addWidget(self._div)
 
         # ── Right content area ────────────────────────────────────────
         self._right = QWidget()
@@ -139,6 +139,12 @@ class MainWindow(QMainWindow):
             if item.widget():
                 item.widget().deleteLater()
         self._right_layout.addWidget(widget)
+
+    # NEW FUNCTION: Hides or shows the left panel smoothly!
+    def set_left_panel_visible(self, visible: bool):
+        """Hides or shows the left AnaInf group list and divider."""
+        self._group_panel.setVisible(visible)
+        self._div.setVisible(visible)
 
     def _show_home_content(self):
         """Show the default right panel (empty grey, just a hint)."""

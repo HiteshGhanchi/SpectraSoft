@@ -35,6 +35,14 @@ class GroupPanel(QWidget):
         self.setPalette(p)
         self._build_ui()
         self._load()
+        
+    def _launch_runner(self):
+        from ui.analysis.runner import RunnerDashboard
+        # The runner dashboard takes over the ENTIRE window, so we replace the central layout
+        runner = RunnerDashboard(self.main_window)
+        # Fix applied here: Use the new toggle function!
+        self.main_window.set_left_panel_visible(False) 
+        self.main_window.set_right_widget(runner)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -76,7 +84,7 @@ class GroupPanel(QWidget):
         self._list.itemDoubleClicked.connect(self._on_select)
         pl.addWidget(self._list)
 
-        # Buttons below listbox
+        # --- THE ORIGINAL BUTTONS ---
         for label, slot in [
             ("1:Select",        self._on_select),
             ("2:Detail",        self._on_detail),
@@ -85,13 +93,24 @@ class GroupPanel(QWidget):
             ("8:Delete",        self._on_delete),
             ("9:WC Coef. Copy", self._on_wc_copy),
         ]:
-            btn = QPushButton(label)
-            btn.setFont(QFont("Arial", 9))
-            btn.setStyleSheet(BTN)
-            btn.clicked.connect(slot)
-            pl.addWidget(btn)
+            b = QPushButton(label)
+            b.setStyleSheet(
+                "QPushButton{background:#d4d0c8;color:black;border:2px outset #ffffff;"
+                "font:9pt Arial;padding:3px 8px;min-width:65px;}"
+                "QPushButton:pressed{border:2px inset #888;}"
+            )
+            b.clicked.connect(slot)
+            pl.addWidget(b)
 
+        # Add the panel to the main layout
         root.addWidget(panel)
+
+        # --- THE NEW RUN ANALYSIS BUTTON (Outside the loop!) ---
+        btn_run = QPushButton("RUN ANALYSIS MODE")
+        btn_run.setStyleSheet("background: #0078d7; color: white; font: bold 10pt Arial; padding: 10px;")
+        btn_run.clicked.connect(self._launch_runner)
+        root.addWidget(btn_run)
+
 
     def _load(self):
         session = get_session()
