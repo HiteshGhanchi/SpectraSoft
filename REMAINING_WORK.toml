@@ -1,0 +1,394 @@
+# =============================================================================
+# SpectraSoft — Remaining Work Reference
+# =============================================================================
+# Status legend:
+#   DONE      = Built, tested, confirmed working
+#   STUB      = File exists but only placeholder content
+#   NOT_BUILT = File does not exist yet
+
+# =============================================================================
+# MODULE 1 — AnaInf (Offline Technique Editor)
+# =============================================================================
+
+[anainf.group_panel]
+file = "ui/anainf/group_panel.py"
+status = "DONE"
+confirmed_working = [
+    "Group list loads from database on startup",
+    "Default groups seeded on first run (LAS 2023 etc.)",
+    "1:Select opens page 1 on right panel",
+    "2:Detail shows saved condition summary",
+    "5:New creates group with name dialog",
+    "8:Delete removes group with confirmation",
+    "9:WC Coef. Copy copies working curve data between groups",
+    "Always visible on left — never hidden when pages load",
+]
+not_yet_built = [
+    "3:Arrange — drag and drop reordering of groups in the list",
+]
+
+[anainf.page_01]
+file = "ui/anainf/page_01_condition.py"
+status = "DONE"
+confirmed_working = [
+    "Analytical Method dropdown (P:PDA+Integ. Mode / I:Integration Mode)",
+    "SEQ section — Purge, Source (all 11 options), Preburn, Integ, Clean rows",
+    "Source dropdown same list for SEQ1 SEQ2 SEQ3 Clean",
+    "Monitor Ele. dropdowns show ELEMENT+WAVELENGTH pairs (e.g. FE   273.0)",
+    "H.Level / L.Level grid with visible cell borders",
+    "S2:Detail button (stub popup for now)",
+    "Saves to page_01_condition on OK/Next",
+    "Reloads saved data on reopen",
+    "Navigation buttons wired correctly",
+]
+not_yet_built = [
+    "S2:Detail popup — Detail Condition dialog with Self Regulated Pre Spark and Bad Burn Detection sections",
+]
+
+[anainf.page_02]
+file = "ui/anainf/page_02_attenuator.py"
+status = "DONE"
+confirmed_working = [
+    "Two-column split table (left rows 1-16, right rows 17+)",
+    "Ele. and Wavelength columns are read-only labels",
+    "ATT column is editable integer (validator 0-255)",
+    "Pre-populated with LAS 2023 confirmed values from old software",
+    "Saves to page_02_attenuator on OK/Next",
+    "Reloads saved data on reopen",
+    "Navigation buttons wired correctly",
+]
+
+[anainf.page_03]
+file = "ui/anainf/page_03_element.py"
+status = "STUB"
+must_build = [
+    "CH count field at top — auto-calculated read-only, updates as rows change",
+    "Scrollable table: Ele.Name | Range Min | Range Max | * | Chemic.Ele. | Element",
+    "All columns fully editable",
+    "* column marks internal standard element (FE by default, asterisk shown)",
+    "6:Ele. button — opens master element picker popup",
+    "S3:Insert — inserts blank row above selected row",
+    "S4:Delete — deletes selected row",
+    "Pre-populate with LAS 2023 defaults (22 elements FE through CE)",
+    "Saves to page_03_element, reloads on reopen",
+]
+defaults_las2023 = [
+    "FE | .00000 | 100.00 | * | Fe | FE",
+    "C  | .00000 | 100.00 |   | C  | C",
+    "SI | .00000 | 100.00 |   | Si | SI",
+    "MN | .00000 | 100.00 |   | Mn | MN",
+    "P  | .00000 | .00000 |   | P  | P",
+    "S  | .00000 | 100.00 |   | S  | S",
+    "CR | .00000 | 100.00 |   | Cr | CR",
+    "NI | .00000 | 100.00 |   | Ni | NI",
+    "MO | .00000 | 100.00 |   | Mo | MO",
+    "CU | .00000 | 100.00 |   | Cu | CU",
+    "V  | .00000 | 100.00 |   | V  | V",
+    "TI | .00000 | 100.00 |   | Ti | TI",
+    "W  | .00000 | 100.00 |   | W  | W",
+    "B  | .00000 | 100.00 |   | B  | B",
+    "NB | .00000 | 100.00 |   | Nb | NB",
+    "CA | .00000 | 100.00 |   | Ca | CA",
+    "CO | .00000 | 100.00 |   | Co | CO",
+    "SN | .00000 | 100.00 |   | Sn | SN",
+    "N  | .00000 | 100.00 |   | N  | N",
+    "PB | .00000 | 100.00 |   | Pb | PB",
+    "AL | .00000 | 100.00 |   | Al | AL",
+    "CE | .00000 | .00000 |   |    |   ",
+]
+
+[anainf.page_04]
+file = "ui/anainf/page_04_channel.py"
+status = "NOT_BUILT"
+must_build = [
+    "Scrollable table: Ele.Name | W.Length | SEQ | W-No. | Internal Element | (wavelength col)",
+    "All columns editable",
+    "SEQ column accepts 1 2 or 3 only",
+    "Internal Element column — same ELEMENT+WAVELENGTH dropdown as Monitor Ele. in Page 1",
+    "6:Ele. button context sensitive: on Ele.Name shows element picker, on W.Length shows wavelengths for that element, on Internal Element shows all element+wavelength options",
+    "S2:Add — adds blank row at end",
+    "S3:Insert — inserts blank row above selected",
+    "S4:Delete — deletes selected row",
+    "Pre-populate with LAS 2023 defaults (22 rows, all internal = FE 273.0 except FE itself)",
+    "Saves to page_04_channel, reloads on reopen",
+]
+defaults_las2023 = [
+    "FE | 273.0   | 1 |   | (blank)   |",
+    "C  | 193.0   | 2 |   | FE 273.0  |",
+    "SI | 212.4   | 2 |   | FE 273.0  |",
+    "MN | 293.3   | 2 |   | FE 273.0  |",
+    "P  | 178.3   | 1 |   | FE 273.0  |",
+    "S  | 180.7   | 1 |   | FE 273.0  |",
+    "CR | 267.7   | 2 |   | FE 273.0  |",
+    "NI | 231.6   | 2 |   | FE 273.0  |",
+    "MO | 202.0   | 2 |   | FE 273.0  |",
+    "CU | 224.2   | 2 |   | FE 273.0  |",
+    "V  | 311.0   | 2 |   | FE 273.0  |",
+    "TI | 337.2   | 1 |   | FE 273.0  |",
+    "W  | 220.4   | 2 |   | FE 273.0  |",
+    "B  | 182.6   | 1 |   | FE 273.0  |",
+    "NB | 319.5   | 2 |   | FE 273.0  |",
+    "CA | 396.8   | 1 |   | FE 273.0  |",
+    "CO | 258.0   | 2 |   | FE 273.0  |",
+    "SN | 189.9   | 2 |   | FE 273.0  |",
+    "N  | 174.5*2 | 2 |   | FE 273.0  |",
+    "PB | 405.7   | 1 |   | FE 273.0  |",
+    "AL | 394.4   | 1 |   | FE 273.0  |",
+    "CE | (blank) | 1 |   | (blank)   |",
+]
+
+[anainf.page_05]
+file = "ui/anainf/page_05_measurement.py"
+status = "NOT_BUILT"
+must_build = [
+    "Scrollable table: Ele.Name | P/I | Method | M | N | I | Area",
+    "P/I dropdown: I:Integ.Mode / P:PDA.Mode",
+    "Method dropdown: 0:Integation / 2:Distribution / 6:Metarographic / 9:Interval integration / A:To Get Sampling Count / I:Input For DCA",
+    "Area dropdown: S:Spark Area / A:Arc Area / T:Total Area",
+    "M and N are editable integers (default 20 and 80)",
+    "I is editable integer",
+    "Pre-populate with LAS 2023 defaults (see below)",
+    "Saves to page_05_measurement, reloads on reopen",
+]
+defaults_las2023 = [
+    "FE  | I:Integ.Mode | 2:Distribution         | 20 | 80 | | T:Total Area",
+    "C   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "SI  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "MN  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "P   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | S:Spark Area",
+    "S   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | S:Spark Area",
+    "CR  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "NI  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "MO  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "CU  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "V   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "TI  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | S:Spark Area",
+    "W   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "B   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | S:Spark Area",
+    "NB  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "CA  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | A:Arc Area",
+    "CO  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "SN  | I:Integ.Mode | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "N   | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+    "PB  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | A:Arc Area",
+    "AL  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | A:Arc Area",
+    "CE  | P:PDA.Mode   | 9:Interval integration | 20 | 80 | | T:Total Area",
+]
+
+[anainf.page_06]
+file = "ui/anainf/page_06_recalibration.py"
+status = "NOT_BUILT"
+must_build = [
+    "Left panel: scrollable element list with suffix 1 on each name (FE1, C1, SI1...)",
+    "Right panel updates when element selected",
+    "Right panel: Sample Name High | Low | K (text fields)",
+    "Right panel: Target High | Low | K (floats, default .00000)",
+    "Right panel: Range High | Low | K (floats, default .00000)",
+    "Right panel: Coefficient Alpha | Beta | K (floats, defaults 1.0000 / .00000 / 1.0000)",
+    "S2:N.Ele — moves to next element",
+    "S3:P.Ele — moves to previous element",
+    "S5:Init. — confirmation dialog then resets Alpha=1.0 Beta=0 K=1.0",
+    "Saves to page_06_recalibration, reloads on reopen",
+]
+note = "Filled AFTER calibration run. All defaults are zero except Alpha=1.0000 and K=1.0000."
+
+[anainf.page_07]
+file = "ui/anainf/page_07_working_curve.py"
+status = "NOT_BUILT"
+must_build = [
+    "Left panel: element list (FE1, C1...)",
+    "Right panel: Working Curve section — Divide int | No. dropdown | Range min-max | Unit text | Order int | STD float(9dp) | Coefficients a b c d (four floats 9dp each)",
+    "Right panel: Matrix Coefficient section — two side-by-side tables, each with D/L | Ele.Name | Coefficient columns (8 rows each)",
+    "D/L toggles between L and blank",
+    "6:Ele. button for Ele.Name column in matrix tables",
+    "S2:N.Ele | S3:P.Ele | S8:N.W.C | S9:P.W.C navigation",
+    "Saves to page_07_working_curve, reloads on reopen",
+]
+note = "Filled AFTER calibration run. Default: a=.000000000 b=.000000000 c=1.00000000 d=.000000000"
+
+[anainf.page_08]
+file = "ui/anainf/page_08_correction.py"
+status = "NOT_BUILT"
+must_build = [
+    "Two-column layout showing all elements",
+    "Each element: Ele.Name | Y/N/I (editable, type directly)",
+    "Legend below table: Y=Require 100%, N=Not require, I=Base Element, Space=same as I",
+    "Default: FE = I, all others = N",
+    "Saves to page_08_correction, reloads on reopen",
+]
+
+[anainf.page_09]
+file = "ui/anainf/page_09_standard.py"
+status = "NOT_BUILT"
+must_build = [
+    "Scrollable table: Ele.Name | Lower | Upper | Trace",
+    "All floats, all editable",
+    "Defaults: Lower=.00000 Upper=100.00 Trace=.00000",
+    "Saves to page_09_standard, reloads on reopen",
+]
+
+[anainf.page_10]
+file = "ui/anainf/page_10_display.py"
+status = "NOT_BUILT"
+must_build = [
+    "Two tabs: Disp. and Print | Trans.",
+    "Tab switch buttons: S2:D/P | S3:Trans.",
+    "Disp. and Print tab: scrollable table Ele.Name | Order | Magn. | Int. | Deci.",
+    "Order defaults sequential (1,2,3...), Magn.=0, Int.=0, Deci.=0 — all editable",
+    "Trans. tab: layout TBD (need screenshot of that tab from old software)",
+    "Saves to page_10_display, reloads on reopen",
+]
+
+[anainf.page_11]
+file = "ui/anainf/page_11_master_curve.py"
+status = "NOT_BUILT"
+must_build = [
+    "Scrollable table: Ele.Name | M.C.Sample | Target | D1 | D2 | AC | MC | Flag",
+    "All editable. Defaults: Target=.00000 D1=.00000 D2=100.00 AC=.00000 MC=1.0000 Flag=blank",
+    "7:Init. button with confirmation dialog — resets all to defaults",
+    "Saves to page_11_master_curve, reloads on reopen",
+]
+
+[anainf.page_12]
+file = "ui/anainf/page_12_analytical_mode.py"
+status = "NOT_BUILT"
+must_build = [
+    "Common text field at top + 8:Refer. button",
+    "Three tabs: Cont. | Int. | Recal. — switch with S2:Cont. | S3:Int. | S4:Recal.",
+    "All tabs share: Number of Analysis spinner | Display Layout (Row of Ele int, Col of EachResult int, Magn dropdown 75/100/125/150/200) | Display item checkboxes (R value, S.D., C.V.) | Print item checkboxes (Each Result, R value, S.D., C.V.) | Print mode radio (Auto/Manu)",
+    "Cont. tab extra: Analysis method radio (Normal / 4-times, default 4-times) | SampleIndex two text lines | 7:Detail button | 5:FileMode button | 6:Trans.Mode button",
+    "Recal. tab extra: Recal. Method radio (1point Recal. / 2point Recal., default 2point)",
+    "Saves to page_12_analytical_mode, reloads on reopen",
+]
+
+[anainf.page_13]
+file = "ui/anainf/page_13_control_chart.py"
+status = "NOT_BUILT"
+is_last_page = true
+must_build = [
+    "Settings at top: Control Line checkbox (Standard Range / Control Range radio) | Sigma Line checkbox (+-1.0STD/+-1.5STD/+-2.0STD/+-3.0STD radio, default +-2.0STD) | Center line radio (Average/Median/Target, default Average) | Class Mark int (default 1) | Display Scale radio (Auto/Fixed, default Auto)",
+    "Scrollable table: Ele.Name | Target | Control Range L | Control Range H | Scale Range L | Scale Range H",
+    "Defaults: all .00000 except Control Range H=100.00 and Scale Range H=100.00",
+    "All cells editable",
+    "2:Next disabled or wraps to Page 1 — this is the last page",
+    "Saves to page_13_control_chart, reloads on reopen",
+]
+
+# =============================================================================
+# MODULE 2 — Analysis Runner
+# =============================================================================
+
+[analysis.runner]
+file = "ui/analysis/runner.py"
+status = "NOT_BUILT"
+must_build = [
+    "Window title: Content Analysis",
+    "Large main display area (split by divider) for results",
+    "Status bar: D P F CT N indicators | Group text field | AN count | TAN count",
+    "Top row 12 buttons: S1:Next S2:Add S3:Mode S4:Group S5:Cancel S6:End S7:Reset S8:Modify S9:Freq S10:Print S11:Round S12:Alloy",
+    "Bottom row 12 buttons: 1:Start 2:Stop 3:Charge 4:Print 5:File 6:Trans 7:Cal 8:Init 9:Recycle 10:Recal 11:Master 12:Quit",
+    "S4:Group opens popup with full technique list and 1:Select button",
+    "1:Start calls hw.run_analysis() in background thread, shows live progress bar",
+    "2:Stop aborts running analysis",
+    "12:Quit returns to AnaInf home screen",
+    "Works fully in SIMULATION_MODE with no hardware",
+    "Buttons 1:Start and 10:Recal disabled until group is selected",
+]
+
+[analysis.results]
+file = "ui/analysis/results.py"
+status = "NOT_BUILT"
+must_build = [
+    "Results table: Element | % Composition",
+    "Shown in main display area of runner.py after run completes",
+    "Values from ADC readings converted via working curve coefficients (page_07 data)",
+    "Print button",
+    "Average across multiple runs per page_12 Number of Analysis setting",
+]
+
+[analysis.math]
+file = "core/analysis_math.py"
+status = "NOT_BUILT"
+must_build = [
+    "convert_adc_to_percent(adc, alpha, beta, k, divide, order) -> float",
+    "apply_matrix_correction(results, matrix_coefs, loops=7) -> dict",
+    "apply_drift_correction(value, drift_factor) -> float",
+    "calculate_average(readings) -> float",
+    "calculate_sd(readings) -> float",
+]
+
+# =============================================================================
+# MODULE 3 — Hardware Constants (Blocked on Vivaan)
+# =============================================================================
+
+[constants.pending]
+file = "constants.py"
+section = "SECTION 2 Hardware Constants"
+all_placeholders = [
+    "ELEMENT_CHANNEL_MAP — all 25 entries have 0x00 as channel ID",
+    "SOURCE_7BIT_MAP — all 11 source types have 0x00 code",
+    "PURGE_CODE_SENSOR1_6BIT and SENSOR2_6BIT",
+    "PREBURN_CODE_SENSOR1_6BIT and SENSOR2_6BIT",
+    "INTEGRATION_CODE_SENSOR1_6BIT and SENSOR2_6BIT",
+    "OUTPUT_CODE_SENSOR1_6BIT and SENSOR2_6BIT",
+    "CLEAN_CODE_SENSOR1_6BIT and SENSOR2_6BIT",
+    "ATTENUATOR_MAX — confirm 127 or 99 or other with Vivaan",
+]
+action = "Vivaan fills from hardware Excel sheet. Set SIMULATION_MODE = False after. No other code changes needed."
+
+# =============================================================================
+# MODULE 4 — Packaging
+# =============================================================================
+
+[packaging]
+status = "NOT_DONE"
+build_command = "pyinstaller --noconfirm --onefile --windowed --name SpectraSoft --collect-all PyQt6 --hidden-import sqlalchemy.dialects.sqlite --hidden-import serial main.py"
+output = "dist/SpectraSoft.exe"
+must_verify = [
+    "data.db created automatically next to .exe on first run",
+    "No Python needed on target machine",
+    "Works on clean Windows 10 and Windows 11",
+    "USB COM port auto-detected when hardware plugged in",
+    "All PyQt6 platform plugins bundled correctly",
+]
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+
+[summary]
+done = [
+    "core/database.py", "core/models.py", "core/hardware.py",
+    "constants.py (Section 1 UI complete, Section 2 hardware placeholders)",
+    "main.py", "ui/main_window.py",
+    "ui/anainf/group_panel.py",
+    "ui/anainf/page_01_condition.py",
+    "ui/anainf/page_02_attenuator.py",
+]
+stub_needs_full_build = [
+    "ui/anainf/page_03_element.py",
+]
+not_built = [
+    "ui/anainf/page_04_channel.py",
+    "ui/anainf/page_05_measurement.py",
+    "ui/anainf/page_06_recalibration.py",
+    "ui/anainf/page_07_working_curve.py",
+    "ui/anainf/page_08_correction.py",
+    "ui/anainf/page_09_standard.py",
+    "ui/anainf/page_10_display.py",
+    "ui/anainf/page_11_master_curve.py",
+    "ui/anainf/page_12_analytical_mode.py",
+    "ui/anainf/page_13_control_chart.py",
+    "ui/analysis/runner.py",
+    "ui/analysis/results.py",
+    "core/analysis_math.py",
+]
+blocked_on_vivaan = [
+    "constants.py Section 2 — all hardware bit mappings",
+    "ATTENUATOR_MAX value confirmation",
+    "Real hardware test of core/hardware.py",
+]
+blocked_on_screenshots = [
+    "page_10_display.py Trans. tab — not visible in PDF screenshots provided",
+    "Analysis runner results format — need screenshot of old software after a real run",
+]
