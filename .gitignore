@@ -4,3 +4,7 @@
 *.pyc
 *.pyo
 *.pyd
+*.db
+*.sqlite3
+*.log
+core/__pycache__/__init__.cpython-313.pyc

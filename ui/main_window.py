@@ -1,7 +1,5 @@
 """
 SpectraSoft — Main Window
-Layout: group list always visible on left, page content on right.
-Matches old PDAWin layout exactly.
 """
 
 from PyQt6.QtWidgets import (
@@ -20,7 +18,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Analytical Information  [Password-Locked]")
+        self.setWindowTitle("Analytical Information")
         self.setMinimumSize(900, 600)
         self.resize(1100, 700)
 
@@ -29,21 +27,15 @@ class MainWindow(QMainWindow):
         self._build_body()
         self._build_status_bar()
 
-        # Hardware poll every 3s
         self._hw_timer = QTimer()
         self._hw_timer.timeout.connect(self._check_hardware)
         self._hw_timer.start(3000)
         self._check_hardware()
 
-        # Clock every second
         self._clock_timer = QTimer()
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
         self._update_clock()
-
-    # ------------------------------------------------------------------
-    # Menu
-    # ------------------------------------------------------------------
 
     def _build_menu(self):
         mb = self.menuBar()
@@ -55,47 +47,13 @@ class MainWindow(QMainWindow):
             "QMenu::item:selected{background:#0078d7;color:white;}"
         )
 
-        def menu(name):
-            return mb.addMenu(name)
+        self._ana_actions = []
 
-        def act(m, label, slot):
-            a = QAction(label, self)
-            a.triggered.connect(slot)
-            m.addAction(a)
-            return a
-
-        file_m = menu("File(F)")
-        act(file_m, "Exit", self.close)
-
-        menu("Edit(E)").setEnabled(False)
-        menu("Display(V)").setEnabled(False)
-
-        ana_m = menu("Analysis(A)")
-        self._ana_actions = [
-            act(ana_m, "Concentration Analysis", self._open_analysis),
-            act(ana_m, "Recalibration Analysis", self._stub),
-            act(ana_m, "Master Curve Analysis",  self._stub),
-            act(ana_m, "Intensity Analysis",      self._stub),
-        ]
-
-        prep_m = menu("Prepare(P)")
-        act(prep_m, "Manual Scan",           self._stub)
-        act(prep_m, "Attenuator Adjustment", self._stub)
-
-        inf_m = menu("Inf.(I)")
-        act(inf_m, "Analytical Information", self._show_home)
-        inf_m.addSeparator()
-        act(inf_m, "Global Calibration Info", self._stub)
-
-        menu("Result Manager(R)").setEnabled(False)
-        menu("Maintenance(M)").setEnabled(False)
-
-        help_m = menu("Help(H)")
-        act(help_m, f"About {APP_NAME}", self._about)
-
-    # ------------------------------------------------------------------
-    # Body — left panel always visible, right panel changes
-    # ------------------------------------------------------------------
+        # Settings menu
+        settings_m = mb.addMenu("Settings")
+        sc_action = QAction("Source Codes", self)
+        sc_action.triggered.connect(self._open_source_codes)
+        settings_m.addAction(sc_action)
 
     def _build_body(self):
         root = QWidget()
@@ -106,20 +64,17 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
 
-        # ── Permanent left panel (group list) ─────────────────────────
         from ui.anainf.group_panel import GroupPanel
         self._group_panel = GroupPanel(self)
         self._group_panel.setFixedWidth(210)
         h.addWidget(self._group_panel)
 
-        # Thin vertical divider (CHANGED TO self._div)
         self._div = QFrame()
         self._div.setFrameShape(QFrame.Shape.VLine)
         self._div.setFrameShadow(QFrame.Shadow.Sunken)
         self._div.setStyleSheet("color:#aaa;")
         h.addWidget(self._div)
 
-        # ── Right content area ────────────────────────────────────────
         self._right = QWidget()
         self._right.setStyleSheet(f"background:{BG};")
         right_layout = QVBoxLayout(self._right)
@@ -128,38 +83,28 @@ class MainWindow(QMainWindow):
         self._right_layout = right_layout
         h.addWidget(self._right, stretch=1)
 
-        # Default: show empty right panel with instruction
         self._show_home_content()
 
     def set_right_widget(self, widget):
-        """Replace the right panel content."""
-        # Remove existing widgets from right layout
         while self._right_layout.count():
             item = self._right_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._right_layout.addWidget(widget)
 
-    # NEW FUNCTION: Hides or shows the left panel smoothly!
     def set_left_panel_visible(self, visible: bool):
-        """Hides or shows the left AnaInf group list and divider."""
         self._group_panel.setVisible(visible)
         self._div.setVisible(visible)
 
     def _show_home_content(self):
-        """Show the default right panel (empty grey, just a hint)."""
         w = QWidget()
         w.setStyleSheet(f"background:{BG};")
         v = QVBoxLayout(w)
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint = QLabel("Select a group and click  1:Select")
+        hint = QLabel("Select a group and double-click to open")
         hint.setStyleSheet("color:#666;font:9pt Arial;")
         v.addWidget(hint)
         self.set_right_widget(w)
-
-    # ------------------------------------------------------------------
-    # Status bar
-    # ------------------------------------------------------------------
 
     def _build_status_bar(self):
         sb = QStatusBar()
@@ -178,13 +123,11 @@ class MainWindow(QMainWindow):
 
     def _set_hw_status(self, connected: bool):
         self._hw_connected = connected
-        for a in self._ana_actions:
-            a.setEnabled(connected or SIMULATION_MODE)
         if connected:
             self._hw_label.setText("  ● Hardware connected")
             self._hw_label.setStyleSheet("color:green;font-weight:bold;")
         elif SIMULATION_MODE:
-            self._hw_label.setText("  ○ Hardware not connected  (Simulation mode ON)")
+            self._hw_label.setText("  ○ Simulation mode ON")
             self._hw_label.setStyleSheet("color:#555;")
         else:
             self._hw_label.setText("  ○ Hardware not connected — plug in USB")
@@ -207,22 +150,9 @@ class MainWindow(QMainWindow):
             if self._hw_connected:
                 self._set_hw_status(False)
 
-    # ------------------------------------------------------------------
-    # Navigation
-    # ------------------------------------------------------------------
+    def _open_source_codes(self):
+        from ui.settings.source_codes_page import SourceCodesPage
+        self.set_right_widget(SourceCodesPage(self))
 
     def _show_home(self):
         self._show_home_content()
-
-    def _open_analysis(self):
-        QMessageBox.information(self, "Coming soon",
-            "Analysis module will be available once hardware is ready.")
-
-    def _stub(self):
-        QMessageBox.information(self, "Coming soon",
-            "This feature will be available in the next release.")
-
-    def _about(self):
-        QMessageBox.about(self, f"About {APP_NAME}",
-            f"<b>{APP_NAME}</b> v{APP_VERSION}<br><br>"
-            "Optical Emission Spectrometer Control Software")
