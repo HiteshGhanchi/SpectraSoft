@@ -55,3 +55,21 @@ class SourceCode(Base):
 
     def __repr__(self):
         return f"<SourceCode(entry_no={self.entry_no}, name='{self.name}')>"
+    
+class MasterElement(Base):
+    """
+    Master list of all elements the spectrometer supports.
+    Users can add/edit/remove entries from the Settings page.
+    Page 02 (Attenuator) and other pages pull from this table.
+    """
+    __tablename__ = "master_elements"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    ele_name      = Column(String(20), nullable=False)   # e.g. "FE", "CR"
+    chemical_name = Column(String(20), default="")       # e.g. "Fe", "Cr"
+    wavelength    = Column(String(20), default="")       # e.g. "273.0", "174.5*2"
+    itg_no        = Column(Integer, default=0)           # integration channel number
+    display_order = Column(Integer, default=0)           # order shown in lists
+
+    def __repr__(self):
+        return f"<MasterElement(ele_name='{self.ele_name}', wavelength='{self.wavelength}')>"

@@ -1,21 +1,13 @@
-"""
-SpectraSoft — Page 2: Attenuator Information
-=============================================
-Two-column table: Ele. | Wavelength | ATT value
-Scrollable. ATT values editable (integers only).
-Pre-populated with LAS 2023 data when group has no saved data yet.
-"""
-
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QPushButton, QFrame,
-    QScrollArea, QMessageBox, QSizePolicy
+    QScrollArea, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor, QIntValidator
 
 from core.database import get_session
-from core.models import AnalyticalGroup
+from core.models import AnalyticalGroup, MasterElement
 
 BG  = "#d4d0c8"
 BTN = (
@@ -28,57 +20,21 @@ HDR = (
     "border:1px solid #aaa;font:9pt Arial;"
     "padding:1px 4px;}"
 )
-CELL_RO = (          # read-only cells (element code, wavelength)
-    "QLabel{background:white;color:black;"
+
+# CHANGED: Gray background to show they are not editable
+CELL_RO = (          
+    "QLabel{background:#e8e8e8;color:#555555;"
     "border:1px solid #aaa;font:9pt Arial;padding:1px 4px;}"
 )
-CELL_ED = (          # editable cells (ATT value)
+
+# Editable cells (ATT value) stay white
+CELL_ED = (          
     "QLineEdit{background:white;color:black;"
     "border:1px solid #aaa;font:9pt Arial;padding:1px 4px;}"
 )
 
-# Default LAS 2023 attenuator data — confirmed from old software screenshots
-# Format: (element_code, wavelength, att_value)
-LAS2023_ATT = [
-    ("FE",  "273.0",   78),
-    ("C",   "193.0",   49),
-    ("SI",  "212.4",   41),
-    ("MN",  "293.3",   40),
-    ("P",   "178.3",   81),
-    ("S",   "180.7",   71),
-    ("V",   "311.0",   44),
-    ("CR",  "267.7",   26),
-    ("CR",  "298.9",    0),
-    ("MO",  "202.0",   46),
-    ("MO",  "277.5",    0),
-    ("NI",  "231.6",   33),
-    ("NI",  "227.7",    0),
-    ("AL",  "394.4",   26),
-    ("CU",  "224.2",   61),
-    ("TI",  "337.2",   93),
-    ("W",   "220.4",   76),
-    ("B",   "182.6",   90),
-    ("NB",  "319.5",   54),
-    ("CA",  "396.8",   48),
-    ("CO",  "258.0",   47),
-    ("SN",  "189.9",   62),
-    ("N",   "174.5*2", 98),
-    ("PB",  "405.7",   82),
-    ("RH",  "421.8",    0),
-]
-
-# Empty rows to fill up to 32 slots per column side
+# Empty rows to fill up to minimum slots
 EMPTY_ROW = ("", "", 0)
-
-
-def _lbl(text, w=None, align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter):
-    l = QLabel(text)
-    l.setFont(QFont("Arial", 9))
-    l.setStyleSheet("color:black;background:transparent;")
-    if w:
-        l.setFixedWidth(w)
-    l.setAlignment(align)
-    return l
 
 
 class AttenuatorPage(QWidget):
@@ -198,13 +154,13 @@ class AttenuatorPage(QWidget):
         g.setSpacing(0)
         g.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Column headers
+        # CHANGED: Removed the empty first column, shifted remaining columns
         col_specs = [
-            ("",    50),   # row number / blank
             ("Ele.", 52),
-            ("",    70),   # wavelength (no header in old software)
+            ("W.L.", 70),   # Wavelength header
             ("ATT", 52),
         ]
+        
         for ci, (txt, w) in enumerate(col_specs):
             h = QLabel(txt)
             h.setFixedWidth(w)
@@ -217,22 +173,23 @@ class AttenuatorPage(QWidget):
 
     def _populate_grids(self, rows):
         """
-        Fill both column grids with data rows.
-        rows: list of (ele_code, wavelength, att_value)
-        Split: left gets rows 0–15, right gets rows 16+
+        Fill both column grids with data rows dynamically.
+        Splits data evenly across left and right columns.
         """
         # Clear existing data rows (keep header row 0)
         self._att_entries.clear()
         self._rows.clear()
 
-        # Pad to even number
-        while len(rows) < 16:
-            rows.append(("", "", 0))
+        # Dynamically split rows so columns are balanced
+        midpoint = max(16, (len(rows) + 1) // 2)
+        left_rows  = rows[:midpoint]
+        right_rows = rows[midpoint:]
 
-        left_rows  = rows[:16]
-        right_rows = rows[16:] if len(rows) > 16 else []
-        while len(right_rows) < 16:
-            right_rows.append(("", "", 0))
+        # Pad to ensure UI structure matches traditional look (at least 16 rows per col)
+        while len(left_rows) < 16:
+            left_rows.append(EMPTY_ROW)
+        while len(right_rows) < len(left_rows):
+            right_rows.append(EMPTY_ROW)
 
         validator = QIntValidator(0, 255)
 
@@ -241,38 +198,39 @@ class AttenuatorPage(QWidget):
             for ri, (ele, wl, att) in enumerate(data_rows):
                 row = ri + 1  # row 0 is header
 
-                # Blank first column (matches old software blank col)
-                blank = QLabel("")
-                blank.setFixedWidth(50)
-                blank.setFixedHeight(20)
-                blank.setStyleSheet(CELL_RO)
-                grid.addWidget(blank, row, 0)
-
-                # Element code (read-only display)
+                # CHANGED: Shifted column indices down by 1 because the blank column was removed
+                
+                # Element code (read-only grayed display)
                 ele_lbl = QLabel(ele)
                 ele_lbl.setFixedWidth(52)
                 ele_lbl.setFixedHeight(20)
                 ele_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 ele_lbl.setStyleSheet(CELL_RO)
-                grid.addWidget(ele_lbl, row, 1)
+                grid.addWidget(ele_lbl, row, 0)
 
-                # Wavelength (read-only display)
+                # Wavelength (read-only grayed display)
                 wl_lbl = QLabel(wl)
                 wl_lbl.setFixedWidth(70)
                 wl_lbl.setFixedHeight(20)
                 wl_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 wl_lbl.setStyleSheet(CELL_RO)
-                grid.addWidget(wl_lbl, row, 2)
+                grid.addWidget(wl_lbl, row, 1)
 
-                # ATT value (editable integer)
+                # ATT value (editable white integer)
                 att_e = QLineEdit(str(att) if ele else "")
                 att_e.setFixedWidth(52)
                 att_e.setFixedHeight(20)
                 att_e.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 att_e.setStyleSheet(CELL_ED)
-                if ele:  # only validate non-empty rows
+                
+                # If it's a blank padding row, disable editing entirely
+                if not ele:
+                    att_e.setReadOnly(True)
+                    att_e.setStyleSheet(CELL_RO)
+                else:
                     att_e.setValidator(validator)
-                grid.addWidget(att_e, row, 3)
+                    
+                grid.addWidget(att_e, row, 2)
 
                 self._att_entries.append(att_e)
                 self._rows.append((ele, wl, att_e))
@@ -296,22 +254,36 @@ class AttenuatorPage(QWidget):
                 })
         return {"rows": rows}
 
-    def _apply(self, d: dict):
-        """Load saved data into the grids."""
-        rows_data = d.get("rows", [])
-        rows = [(r["element"], r["wavelength"], r["att_value"]) for r in rows_data]
-        if rows:
-            self._populate_grids(rows)
-
     def _load(self):
+        """
+        Pulls element definitions from MasterElement DB, and merges 
+        with specific attenuator values saved in the AnalyticalGroup JSON.
+        """
         session = get_session()
         try:
+            # 1. Fetch all available elements from Master DB
+            master_elements = session.query(MasterElement).order_by(MasterElement.display_order).all()
+            
+            # 2. Fetch the saved attenuator values for this specific analytical group
+            saved_att_values = {}
             g = session.get(AnalyticalGroup, self.group_id)
             if g and g.page_02_attenuator and g.page_02_attenuator.get("rows"):
-                self._apply(g.page_02_attenuator)
-            else:
-                # First time — use LAS 2023 defaults
-                self._populate_grids(list(LAS2023_ATT))
+                # Create a lookup dictionary keyed by (element, wavelength)
+                for r in g.page_02_attenuator["rows"]:
+                    saved_att_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
+
+            # 3. Construct rows combining master definition and group-specific saved values
+            rows = []
+            for me in master_elements:
+                ele = me.ele_name or ""
+                wl = me.wavelength or ""
+                
+                # Fetch saved value, default to 0 if no value exists yet
+                att = saved_att_values.get((ele, wl), 0)
+                rows.append((ele, wl, att))
+
+            self._populate_grids(rows)
+
         finally:
             session.close()
 

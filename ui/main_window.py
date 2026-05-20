@@ -54,6 +54,10 @@ class MainWindow(QMainWindow):
         sc_action = QAction("Source Codes", self)
         sc_action.triggered.connect(self._open_source_codes)
         settings_m.addAction(sc_action)
+        
+        me_action = QAction("Master Elements", self)
+        me_action.triggered.connect(self._open_master_elements)
+        settings_m.addAction(me_action)
 
     def _build_body(self):
         root = QWidget()
@@ -153,6 +157,10 @@ class MainWindow(QMainWindow):
     def _open_source_codes(self):
         from ui.settings.source_codes_page import SourceCodesPage
         self.set_right_widget(SourceCodesPage(self))
+
+    def _open_master_elements(self):
+        from ui.settings.master_elements_page import MasterElementsPage
+        self.set_right_widget(MasterElementsPage(self))
 
     def _show_home(self):
         self._show_home_content()
