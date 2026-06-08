@@ -17,13 +17,7 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import MasterElement
-
-BG  = "#d4d0c8"
-BTN = (
-    "QPushButton{background:#d4d0c8;color:black;border:2px outset #ffffff;"
-    "font:9pt Arial;padding:3px 8px;min-width:80px;}"
-    "QPushButton:pressed{border:2px inset #888;}"
-)
+from ui.ui_theme import Colors, Stylesheets, Spacing, Fonts, get_font, get_color
 
 
 class MasterElementsPage(QWidget):
@@ -33,7 +27,7 @@ class MasterElementsPage(QWidget):
         self.main_window = main_window
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), QColor(BG))
+        p.setColor(self.backgroundRole(), get_color(Colors.BG_MAIN))
         self.setPalette(p)
         self._build_ui()
         self._load()
@@ -43,19 +37,18 @@ class MasterElementsPage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        bar = QLabel("Settings — Master Elements")
+        bar = QLabel("Master Elements")
         bar.setFixedHeight(22)
         bar.setContentsMargins(8, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        bar.setStyleSheet(
-            "background:#5c9bd5;color:white;font:bold 10pt Arial;")
+        bar.setStyleSheet(Stylesheets.HEADER_BAR)
         root.addWidget(bar)
 
         outer = QFrame()
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet(Stylesheets.PANEL_WHITE)
         root.addWidget(outer, stretch=1)
 
         ol = QVBoxLayout(outer)
@@ -66,7 +59,7 @@ class MasterElementsPage(QWidget):
             "Define all elements the spectrometer supports.\n"
             "These populate the Attenuator page and element pickers."
         )
-        info.setStyleSheet("color:#444;font:9pt Arial;")
+        info.setStyleSheet(f"color:{Colors.TEXT_MEDIUM_GRAY};font:{Fonts.SIZE_NORMAL}pt {Fonts.FAMILY_DEFAULT};")
         ol.addWidget(info)
 
         self.table = QTableWidget(0, 4)
@@ -87,17 +80,7 @@ class MasterElementsPage(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background: white; color: black;
-                border: 1px solid #aaa; font: 9pt Arial;
-                gridline-color: #ccc;
-            }
-            QHeaderView::section {
-                background: #d4d0c8; color: black;
-                border: 1px solid #aaa; font: 9pt Arial; padding: 3px;
-            }
-        """)
+        self.table.setStyleSheet(Stylesheets.TABLE_NORMAL)
         ol.addWidget(self.table)
 
         btn_row = QHBoxLayout()
@@ -110,7 +93,7 @@ class MasterElementsPage(QWidget):
             ("Import",     self._on_import),
         ]:
             b = QPushButton(label)
-            b.setStyleSheet(BTN)
+            b.setStyleSheet(Stylesheets.BUTTON_NORMAL)
             b.clicked.connect(slot)
             btn_row.addWidget(b)
         btn_row.addStretch()
@@ -142,6 +125,9 @@ class MasterElementsPage(QWidget):
                               r.chemical_name, r.wavelength)
         finally:
             session.close()
+            
+    def wants_fullscreen(self) -> bool:
+        return True
 
     def _collect(self) -> list:
         rows = []

@@ -7,11 +7,10 @@ from PyQt6.QtWidgets import (
     QLabel, QStatusBar, QFrame, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, QDateTime
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction
 
-from constants import APP_NAME, APP_VERSION, SIMULATION_MODE
-
-BG = "#d4d0c8"
+from ui.ui_theme import Colors, Stylesheets, Spacing
+from ui.analysis_run_page import AnalysisRunPage
 
 
 class MainWindow(QMainWindow):
@@ -20,18 +19,15 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Analytical Information")
         self.setMinimumSize(900, 600)
-        self.resize(1100, 700)
+        self.resize(Spacing.MAIN_WINDOW_WIDTH, Spacing.MAIN_WINDOW_HEIGHT)
 
-        self._hw_connected = False
+        self._current_action = None   # track currently active menu action
+
         self._build_menu()
         self._build_body()
         self._build_status_bar()
 
-        self._hw_timer = QTimer()
-        self._hw_timer.timeout.connect(self._check_hardware)
-        self._hw_timer.start(3000)
-        self._check_hardware()
-
+        # Only clock timer
         self._clock_timer = QTimer()
         self._clock_timer.timeout.connect(self._update_clock)
         self._clock_timer.start(1000)
@@ -39,29 +35,50 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         mb = self.menuBar()
-        mb.setStyleSheet(
-            f"QMenuBar{{background:{BG};color:black;}}"
-            "QMenuBar::item{background:#d4d0c8;color:black;padding:3px 8px;}"
-            "QMenuBar::item:selected{background:#0078d7;color:white;}"
-            f"QMenu{{background:{BG};color:black;}}"
-            "QMenu::item:selected{background:#0078d7;color:white;}"
-        )
+        mb.setStyleSheet(Stylesheets.MENUBAR)
 
-        self._ana_actions = []
+        # Analytical Group (split home page)
+        group_m = mb.addMenu("Analytical Group")
+        self.action_group = QAction("Analytical Group", self)
+        self.action_group.setCheckable(True)
+        self.action_group.triggered.connect(self._show_home_content)
+        group_m.addAction(self.action_group)
 
-        # Settings menu
-        settings_m = mb.addMenu("Settings")
-        sc_action = QAction("Source Codes", self)
-        sc_action.triggered.connect(self._open_source_codes)
-        settings_m.addAction(sc_action)
-        
-        me_action = QAction("Master Elements", self)
-        me_action.triggered.connect(self._open_master_elements)
-        settings_m.addAction(me_action)
+        # Master Elements
+        master_m = mb.addMenu("Master Elements")
+        self.action_master = QAction("Master Elements", self)
+        self.action_master.setCheckable(True)
+        self.action_master.triggered.connect(self._open_master_elements)
+        master_m.addAction(self.action_master)
+
+        # Source Codes
+        source_m = mb.addMenu("Source Codes")
+        self.action_source = QAction("Source Codes", self)
+        self.action_source.setCheckable(True)
+        self.action_source.triggered.connect(self._open_source_codes)
+        source_m.addAction(self.action_source)
+
+        # Analysis
+        analysis_m = mb.addMenu("Analysis")
+        self.action_analysis = QAction("Run Analysis", self)
+        self.action_analysis.setCheckable(True)
+        self.action_analysis.triggered.connect(self._open_analysis_run)
+        analysis_m.addAction(self.action_analysis)
+
+        # Initially set Analytical Group as checked
+        self.action_group.setChecked(True)
+        self._current_action = self.action_group
+
+    def _set_active_menu(self, action):
+        """Check the given action, uncheck the previous one."""
+        if self._current_action:
+            self._current_action.setChecked(False)
+        action.setChecked(True)
+        self._current_action = action
 
     def _build_body(self):
         root = QWidget()
-        root.setStyleSheet(f"background:{BG};")
+        root.setStyleSheet(Stylesheets.PANEL_MAIN)
         self.setCentralWidget(root)
 
         h = QHBoxLayout(root)
@@ -70,97 +87,95 @@ class MainWindow(QMainWindow):
 
         from ui.anainf.group_panel import GroupPanel
         self._group_panel = GroupPanel(self)
-        self._group_panel.setFixedWidth(210)
+        self._group_panel.setFixedWidth(Spacing.GROUP_PANEL_WIDTH)
         h.addWidget(self._group_panel)
 
         self._div = QFrame()
         self._div.setFrameShape(QFrame.Shape.VLine)
         self._div.setFrameShadow(QFrame.Shadow.Sunken)
-        self._div.setStyleSheet("color:#aaa;")
+        self._div.setStyleSheet(f"color:{Colors.BORDER_LIGHT};")
         h.addWidget(self._div)
 
         self._right = QWidget()
-        self._right.setStyleSheet(f"background:{BG};")
-        right_layout = QVBoxLayout(self._right)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-        self._right_layout = right_layout
+        self._right.setStyleSheet(Stylesheets.PANEL_MAIN)
+        self._right_layout = QVBoxLayout(self._right)
+        self._right_layout.setContentsMargins(0, 0, 0, 0)
+        self._right_layout.setSpacing(0)
         h.addWidget(self._right, stretch=1)
 
         self._show_home_content()
 
     def set_right_widget(self, widget):
+        # Clear existing widget from right area
         while self._right_layout.count():
             item = self._right_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._right_layout.addWidget(widget)
 
+        # Check if the new widget wants full‑screen mode
+        if hasattr(widget, 'wants_fullscreen') and callable(widget.wants_fullscreen):
+            self.set_fullscreen_mode(widget.wants_fullscreen())
+        else:
+            self.set_fullscreen_mode(False)
+
     def set_left_panel_visible(self, visible: bool):
         self._group_panel.setVisible(visible)
         self._div.setVisible(visible)
 
+    def set_fullscreen_mode(self, enabled: bool):
+        """Hide or show the left panel and divider."""
+        self.set_left_panel_visible(not enabled)
+
     def _show_home_content(self):
+        # Switch to split home page
+        self._set_active_menu(self.action_group)
+        self.set_fullscreen_mode(False)
         w = QWidget()
-        w.setStyleSheet(f"background:{BG};")
+        w.setStyleSheet(Stylesheets.PANEL_MAIN)
         v = QVBoxLayout(w)
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint = QLabel("Select a group and double-click to open")
-        hint.setStyleSheet("color:#666;font:9pt Arial;")
+        hint = QLabel("Select a group and double-click to open\nor use Analysis → Run Analysis")
+        hint.setStyleSheet(Stylesheets.LABEL_HINT)
         v.addWidget(hint)
         self.set_right_widget(w)
 
     def _build_status_bar(self):
         sb = QStatusBar()
-        sb.setStyleSheet(f"background:{BG};color:black;")
+        sb.setStyleSheet(Stylesheets.STATUSBAR)
         self.setStatusBar(sb)
 
-        self._hw_label = QLabel()
-        self._hw_label.setStyleSheet("color:black;")
-        sb.addWidget(self._hw_label)
-
         self._clock_label = QLabel()
-        self._clock_label.setStyleSheet("color:black;")
+        self._clock_label.setStyleSheet(Stylesheets.STATUS_LABEL_NORMAL)
         sb.addPermanentWidget(self._clock_label)
-
-        self._set_hw_status(False)
-
-    def _set_hw_status(self, connected: bool):
-        self._hw_connected = connected
-        if connected:
-            self._hw_label.setText("  ● Hardware connected")
-            self._hw_label.setStyleSheet("color:green;font-weight:bold;")
-        elif SIMULATION_MODE:
-            self._hw_label.setText("  ○ Simulation mode ON")
-            self._hw_label.setStyleSheet("color:#555;")
-        else:
-            self._hw_label.setText("  ○ Hardware not connected — plug in USB")
-            self._hw_label.setStyleSheet("color:#cc0000;font-weight:bold;")
 
     def _update_clock(self):
         self._clock_label.setText(
             QDateTime.currentDateTime().toString("dd-MM-yyyy   hh:mm")
         )
 
-    def _check_hardware(self):
-        if SIMULATION_MODE:
-            return
-        try:
-            from core.hardware import hw
-            connected = hw.detect_port()
-            if connected != self._hw_connected:
-                self._set_hw_status(connected)
-        except Exception:
-            if self._hw_connected:
-                self._set_hw_status(False)
-
     def _open_source_codes(self):
         from ui.settings.source_codes_page import SourceCodesPage
+        self._set_active_menu(self.action_source)
         self.set_right_widget(SourceCodesPage(self))
 
     def _open_master_elements(self):
         from ui.settings.master_elements_page import MasterElementsPage
+        self._set_active_menu(self.action_master)
         self.set_right_widget(MasterElementsPage(self))
 
-    def _show_home(self):
-        self._show_home_content()
+    def _get_current_group(self):
+        if hasattr(self._group_panel, '_selected'):
+            gid, gname = self._group_panel._selected()
+            if gid is not None:
+                return gid, gname
+        return 1, "Demo Group"
+
+    def _open_analysis_run(self):
+        gid, gname = self._get_current_group()
+        if gid is None:
+            QMessageBox.warning(self, "No Group", "Please select an analytical group first.")
+            return
+        self._set_active_menu(self.action_analysis)
+        run_page = AnalysisRunPage(self, group_id=gid, group_name=gname)
+        self.set_right_widget(run_page)

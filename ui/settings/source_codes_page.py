@@ -14,13 +14,7 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import SourceCode
-
-BG  = "#d4d0c8"
-BTN = (
-    "QPushButton{background:#d4d0c8;color:black;border:2px outset #ffffff;"
-    "font:9pt Arial;padding:3px 8px;min-width:80px;}"
-    "QPushButton:pressed{border:2px inset #888;}"
-)
+from ui.ui_theme import Colors, Stylesheets, Spacing, Fonts, get_font, get_color
 NUM_ROWS = 16
 
 
@@ -31,7 +25,7 @@ class SourceCodesPage(QWidget):
         self.main_window = main_window
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), QColor(BG))
+        p.setColor(self.backgroundRole(), get_color(Colors.BG_MAIN))
         self.setPalette(p)
         self._build_ui()
         self._load()
@@ -42,11 +36,11 @@ class SourceCodesPage(QWidget):
         root.setSpacing(0)
 
         # Title bar
-        bar = QLabel("Settings — Source Codes")
+        bar = QLabel("Source Codes")
         bar.setFixedHeight(22)
         bar.setContentsMargins(8, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        bar.setStyleSheet("background:#5c9bd5;color:white;font:bold 10pt Arial;")
+        bar.setStyleSheet(Stylesheets.HEADER_BAR)
         root.addWidget(bar)
 
         # White outer frame
@@ -54,7 +48,7 @@ class SourceCodesPage(QWidget):
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet(Stylesheets.PANEL_WHITE)
         root.addWidget(outer, stretch=1)
 
         ol = QVBoxLayout(outer)
@@ -65,7 +59,7 @@ class SourceCodesPage(QWidget):
             "Entry No. (0–F) is the hardware command value sent over UART.\n"
             "Edit the Name column to label each source type."
         )
-        info.setStyleSheet("color:#444;font:9pt Arial;")
+        info.setStyleSheet(f"color:{Colors.TEXT_MEDIUM_GRAY};font:{Fonts.SIZE_NORMAL}pt {Fonts.FAMILY_DEFAULT};")
         ol.addWidget(info)
 
         # Table — 2 columns, 16 rows
@@ -84,17 +78,7 @@ class SourceCodesPage(QWidget):
             QAbstractItemView.EditTrigger.SelectedClicked |
             QAbstractItemView.EditTrigger.EditKeyPressed
         )
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background: white; color: black;
-                border: 1px solid #aaa; font: 9pt Arial;
-                gridline-color: #ccc;
-            }
-            QHeaderView::section {
-                background: #d4d0c8; color: black;
-                border: 1px solid #aaa; font: 9pt Arial; padding: 3px;
-            }
-        """)
+        self.table.setStyleSheet(Stylesheets.TABLE_NORMAL)
         ol.addWidget(self.table)
 
         # Buttons
@@ -107,12 +91,15 @@ class SourceCodesPage(QWidget):
             ("Import", self._on_import),
         ]:
             b = QPushButton(label)
-            b.setStyleSheet(BTN)
+            b.setStyleSheet(Stylesheets.BUTTON_NORMAL)
             b.clicked.connect(slot)
             btn_row.addWidget(b)
 
         btn_row.addStretch()
         ol.addLayout(btn_row)
+        
+    def wants_fullscreen(self) -> bool:
+        return True
 
     def _load(self):
         session = get_session()

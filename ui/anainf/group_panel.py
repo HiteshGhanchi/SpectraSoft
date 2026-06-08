@@ -9,12 +9,10 @@ from PyQt6.QtWidgets import (
     QInputDialog, QMessageBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
 
 from core.database import get_session
 from core.models import AnalyticalGroup
-
-BG = "#d4d0c8"
+from ui.ui_theme import Colors, Stylesheets, Spacing, Fonts, get_font, get_color
 
 
 class GroupPanel(QWidget):
@@ -24,50 +22,53 @@ class GroupPanel(QWidget):
         self.main_window = main_window
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), QColor(BG))
+        p.setColor(self.backgroundRole(), get_color(Colors.BG_MAIN))
         self.setPalette(p)
         self._build_ui()
         self._load()
 
-    def _launch_runner(self):
-        from ui.analysis.runner import RunnerDashboard
-        runner = RunnerDashboard(self.main_window)
-        self.main_window.set_left_panel_visible(False)
-        self.main_window.set_right_widget(runner)
-
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(4)
+        root.setContentsMargins(Spacing.PADDING_NORMAL, Spacing.PADDING_NORMAL,
+                               Spacing.PADDING_NORMAL, Spacing.PADDING_NORMAL)
+        root.setSpacing(Spacing.PADDING_NORMAL)
 
         title = QLabel("Analytical Group Information")
-        title.setFont(QFont("Arial", 9))
-        title.setStyleSheet(f"background:{BG};color:black;")
+        title.setFont(get_font())
+        title.setStyleSheet(Stylesheets.LABEL_NORMAL)
         root.addWidget(title)
 
         panel = QFrame()
         panel.setFrameShape(QFrame.Shape.Box)
         panel.setFrameShadow(QFrame.Shadow.Raised)
         panel.setLineWidth(2)
-        panel.setStyleSheet(f"background:{BG};")
+        panel.setStyleSheet(Stylesheets.PANEL_MAIN)
 
         pl = QVBoxLayout(panel)
-        pl.setContentsMargins(8, 6, 8, 8)
-        pl.setSpacing(4)
+        pl.setContentsMargins(Spacing.PADDING_LARGE, 6,
+                              Spacing.PADDING_LARGE, Spacing.PADDING_LARGE)
+        pl.setSpacing(Spacing.PADDING_NORMAL)
 
         hdr = QLabel("Analytical Group")
-        hdr.setFont(QFont("Arial", 9))
+        hdr.setFont(get_font())
         hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hdr.setStyleSheet(f"background:{BG};color:black;")
+        hdr.setStyleSheet(Stylesheets.LABEL_NORMAL)
         pl.addWidget(hdr)
 
-        # List with drag-and-drop reordering enabled
+        # List with drag-and-drop reordering
         self._list = QListWidget()
-        self._list.setFont(QFont("Arial", 9))
+        self._list.setFont(get_font())
         self._list.setStyleSheet(
-            "QListWidget{background:white;color:black;border:1px solid #aaa;}"
-            "QListWidget::item{padding:1px 2px;color:black;}"
-            "QListWidget::item:selected{background:#0078d7;color:white;}"
+            f"QListWidget{{"
+            f"background:{Colors.BG_WHITE};"
+            f"color:{Colors.TEXT_BLACK};"
+            f"border:{Spacing.BORDER_NORMAL} solid {Colors.BORDER_LIGHT};"
+            f"}}"
+            f"QListWidget::item{{padding:1px 2px;color:{Colors.TEXT_BLACK};}}"
+            f"QListWidget::item:selected{{"
+            f"background:{Colors.ACCENT_PRIMARY};"
+            f"color:{Colors.TEXT_WHITE};"
+            f"}}"
         )
         self._list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self._list.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -75,30 +76,20 @@ class GroupPanel(QWidget):
         self._list.itemDoubleClicked.connect(self._on_open)
         pl.addWidget(self._list)
 
-        BTN = (
-            "QPushButton{background:#d4d0c8;color:black;border:2px outset #ffffff;"
-            "font:9pt Arial;padding:3px 8px;min-width:65px;}"
-            "QPushButton:pressed{border:2px inset #888;}"
-        )
-
+        # Buttons: New, Delete, WC Coef. Copy
         for label, slot in [
             ("New",           self._on_new),
             ("Delete",        self._on_delete),
             ("WC Coef. Copy", self._on_wc_copy),
         ]:
-            b = QPushButton(label)
-            b.setStyleSheet(BTN)
-            b.clicked.connect(slot)
-            pl.addWidget(b)
+            btn = QPushButton(label)
+            btn.setStyleSheet(Stylesheets.BUTTON_NORMAL)
+            btn.clicked.connect(slot)
+            pl.addWidget(btn)
 
         root.addWidget(panel)
 
-        btn_run = QPushButton("RUN ANALYSIS MODE")
-        btn_run.setStyleSheet(
-            "background:#0078d7;color:white;font:bold 10pt Arial;padding:10px;"
-        )
-        btn_run.clicked.connect(self._launch_runner)
-        root.addWidget(btn_run)
+        # No large RUN ANALYSIS MODE button – removed
 
     def _load(self):
         session = get_session()
@@ -129,7 +120,7 @@ class GroupPanel(QWidget):
                 break
 
     def _on_rows_moved(self):
-        """Save new display order to DB after drag-and-drop."""
+        """Save new display order after drag-and-drop."""
         session = get_session()
         try:
             for i in range(self._list.count()):
