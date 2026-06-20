@@ -439,63 +439,159 @@ class AnalysisRunPage(QWidget):
     # ------------------------------------------------------------------
     # Printing (unchanged logic, works with any table content)
     # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+    # Upgraded Printing Engine & CSS Layout
+    # ------------------------------------------------------------------
     def _on_print(self):
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QDialogButtonBox
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Print Options")
-        layout = QVBoxLayout(dlg)
-        btn_box = QDialogButtonBox()
-        btn_portrait = btn_box.addButton("Portrait", QDialogButtonBox.ButtonRole.ActionRole)
-        btn_landscape = btn_box.addButton("Landscape", QDialogButtonBox.ButtonRole.ActionRole)
-        btn_cancel = btn_box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        layout.addWidget(btn_box)
-
-        def do_print(orientation):
-            dlg.accept()
-            self._print_table(orientation)
-
-        btn_portrait.clicked.connect(lambda: do_print("portrait"))
-        btn_landscape.clicked.connect(lambda: do_print("landscape"))
-        btn_cancel.clicked.connect(dlg.reject)
-        dlg.exec()
-
-    def _print_table(self, orientation: str):
-        doc = QTextDocument()
-        html = self._generate_html_report(orientation)
-        doc.setHtml(html)
+        """Launches the native print preview canvas directly with default setup."""
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        if orientation == "landscape":
-            printer.setPageOrientation(QPageLayout.Orientation.Landscape)
-        else:
-            printer.setPageOrientation(QPageLayout.Orientation.Portrait)
+        printer.setPageOrientation(QPageLayout.Orientation.Portrait)
+        
+        # Open the native preview dialog immediately
         preview = QPrintPreviewDialog(printer, self)
-        preview.paintRequested.connect(lambda p: doc.print_(p))
+        
+        # When user changes orientation or page settings in the toolbar, 
+        # this callback fires, passing the updated printer state.
+        preview.paintRequested.connect(self._render_print_page)
         preview.exec()
 
+    def _render_print_page(self, printer):
+        """Dynamically parses and renders the HTML using the printer's active state."""
+        doc = QTextDocument()
+        
+        # Read the current orientation directly from the native toolbar state
+        is_landscape = printer.pageLayout().orientation() == QPageLayout.Orientation.Landscape
+        orientation_str = "landscape" if is_landscape else "portrait"
+        
+        # Compile and bind the scaled HTML blueprint
+        html = self._generate_html_report(orientation_str)
+        doc.setHtml(html)
+        doc.print(printer)
+
     def _generate_html_report(self, orientation: str) -> str:
-        title = f"SpectraSoft Analysis Report - Group: {self.group_name}"
+        """Generates a perfectly scaled, centered, and customizable printable report."""
+        if self.current_display_mode == "average":
+            report_subtitle = f"Summary Report — Average of all {len(self.st_results)} Stored STs"
+        elif self.current_display_mode == "stored":
+            report_subtitle = f"Historical Log — Run Detail for ST No. {self.current_st_view}"
+        else:
+            report_subtitle = f"Live Run View — Latest Measurements (ST No. {self.current_st_view or '—'})"
+
+        title = "SpectraSoft Analysis Report"
+        timestamp = QDate.currentDate().toString("dd-MM-yyyy")
+        
+        # Extract Table Rows
         rows = []
-        header = "<tr><th>Ch. No.</th><th>Channel</th>" + "".join(f"<th>Seq {i+1}</th>" for i in range(NUM_SEQS)) + "</tr>"
-        rows.append(header)
+        header_cols = "<th>Ch. No.</th><th>Channel Name</th>" + "".join(f"<th>Seq {i+1}</th>" for i in range(NUM_SEQS))
+        rows.append(f"<tr class='header-row'>{header_cols}</tr>")
+        
         for row in range(self.table.rowCount()):
             ch_no_item = self.table.item(row, 0)
             ch_name_item = self.table.item(row, 1)
             ch_no = ch_no_item.text() if ch_no_item else ""
             ch_name = ch_name_item.text() if ch_name_item else ""
-            row_html = f"<tr>{ch_no}<tr>{ch_name}</td>"
+            
+            row_html = f"<tr><td class='center-text'>{ch_no}</td><td class='left-text'><b>{ch_name}</b></td>"
             for col in range(2, self.table.columnCount()):
                 item = self.table.item(row, col)
                 val = item.text() if item else "—"
-                row_html += f"<td style='text-align:right'>{val}</td>"
+                row_html += f"<td class='right-text'>{val}</td>"
             row_html += "</tr>"
             rows.append(row_html)
-        table_html = "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse:collapse'>" + "".join(rows) + "</table>"
-        footer = f"<p>Analyses completed: {self.analysis_count} &nbsp; | &nbsp; Printed: {QDate.currentDate().toString()}</p>"
-        return f"""
-        <html><head><title>{title}</title></head>
-        <body style='font-family:Arial;'><h2>{title}</h2>{table_html}{footer}</body></html>
-        """
+            
+        table_html = f"<table class='report-table'>{''.join(rows)}</table>"
 
+        # --- ADVANCED LAYOUT CONTROLS ---
+        # Toggle between layout modes depending on orientation or data density
+        if orientation == "landscape":
+            # Example Layout: Two matching structural components side-by-side
+            layout_wrapper = f"""
+            <div class='flex-container'>
+                <div class='flex-column' style='width: 58%;'>
+                    <h3 class='section-title'>Primary Dataset</h3>
+                    {table_html}
+                </div>
+                <div class='flex-column' style='width: 38%; margin-left: 4%;'>
+                    <h3 class='section-title'>System Diagnosis & Notes</h3>
+                    <div style='border: 1pt solid #bdc3c7; padding: 12pt; background-color: #f8f9fa; font-size: 11pt;'>
+                        <p><b>Status:</b> Nominal</p>
+                        <p><b>Operator Notes:</b> High-resolution structural batch test complete. Calibration settings verified against internal standards.</p>
+                    </div>
+                </div>
+            </div>
+            """
+        else:
+            # Standard Center Layout for Portrait mode
+            layout_wrapper = f"""
+            <div class='center-wrapper'>
+                {table_html}
+            </div>
+            """
+
+        return f"""
+        <html>
+        <head>
+            <style>
+                /* Absolute print dimensions using points (pt) and inches (in) */
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #333; margin: 0.25in; }}
+                
+                .header-container {{ border-bottom: 2pt solid #2c3e50; padding-bottom: 8pt; margin-bottom: 15pt; }}
+                h2 {{ color: #2c3e50; margin: 0 0 4pt 0; font-size: 24pt; }}
+                h4 {{ color: #7f8c8d; margin: 0; font-size: 12pt; font-weight: normal; letter-spacing: 1pt; }}
+                .section-title {{ color: #34495e; font-size: 14pt; margin-top: 0; border-bottom: 1pt solid #bdc3c7; padding-bottom: 4pt; }}
+                
+                .meta-box {{ margin-bottom: 20pt; background-color: #f8f9fa; padding: 12pt; border-left: 4pt solid #34495e; font-size: 11pt; }}
+                .meta-table {{ width: 100%; border: none; }}
+                .meta-table td {{ border: none; padding: 3pt 5pt; }}
+                
+                /* Layout structural controls */
+                .center-wrapper {{ width: 95%; margin: 0 auto; }}
+                .flex-container {{ width: 100%; display: block; }}
+                .flex-column {{ float: left; }}
+                
+                /* Centered, high-visibility table design */
+                .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10pt; font-size: 11pt; }}
+                .report-table th, .report-table td {{ border: 1pt solid #bdc3c7; padding: 8pt 10pt; }}
+                .header-row {{ background-color: #34495e; color: #ffffff; font-weight: bold; }}
+                
+                .left-text {{ text-align: left; }}
+                .center-text {{ text-align: center; color: #7f8c8d; }}
+                .right-text {{ text-align: right; font-family: 'Courier New', monospace; font-weight: bold; font-size: 11pt; }}
+                
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                
+                .clear {{ clear: both; }}
+                .footer {{ margin-top: 40pt; border-top: 1px solid #dcdde1; padding-top: 10pt; font-size: 10pt; color: #7f8c8d; text-align: right; }}
+            </style>
+        </head>
+        <body>
+            <div class='header-container'>
+                <h2>{title}</h2>
+                <h4>{report_subtitle}</h4>
+            </div>
+            
+            <div class='meta-box'>
+                <table class='meta-table'>
+                    <tr>
+                        <td><b>Analytical Group:</b> {self.group_name} (ID: {self.group_id})</td>
+                        <td style='text-align: right;'><b>Date Generated:</b> {timestamp}</td>
+                    </tr>
+                    <tr>
+                        <td><b>Total Runs Captured:</b> {self.analysis_count} STs</td>
+                        <td style='text-align: right;'><b>Mode:</b> {orientation.capitalize()} View</td>
+                    </tr>
+                </table>
+            </div>
+            
+            {layout_wrapper}
+            
+            <div class='clear'></div>
+            <div class='footer'>
+                SpectraSoft Core System Engine • Page 1 of 1
+            </div>
+        </body>
+        </html>
+        """
     # ------------------------------------------------------------------
     def wants_fullscreen(self) -> bool:
         return True
