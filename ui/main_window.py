@@ -6,38 +6,58 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QStatusBar, QFrame, QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer, QDateTime
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
-
-from ui.ui_theme import Colors, Stylesheets, Spacing
-from ui.analysis_run_page import AnalysisRunPage
 
 
 class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Analytical Information")
-        self.setMinimumSize(900, 600)
-        self.resize(Spacing.MAIN_WINDOW_WIDTH, Spacing.MAIN_WINDOW_HEIGHT)
+        self.setWindowTitle("SpectraSoft")
+        
+        # Fixed size — window cannot be resized
+        self.setFixedSize(1100, 680)
 
-        self._current_action = None   # track currently active menu action
+        self._current_action = None
 
         self._build_menu()
         self._build_body()
         self._build_status_bar()
 
-        # Only clock timer
-        self._clock_timer = QTimer()
-        self._clock_timer.timeout.connect(self._update_clock)
-        self._clock_timer.start(1000)
-        self._update_clock()
+    # =========================================================================
+    # Menu
+    # =========================================================================
 
     def _build_menu(self):
         mb = self.menuBar()
-        mb.setStyleSheet(Stylesheets.MENUBAR)
+        mb.setStyleSheet(
+            "QMenuBar{"
+            "background:#c0b8a8;"
+            "color:#000000;"
+            "border-bottom:1px solid #888888;"
+            "}"
+            "QMenuBar::item{"
+            "background:#c0b8a8;"
+            "color:#000000;"
+            "padding:2px 10px;"
+            "}"
+            "QMenuBar::item:selected{"
+            "background:#0078d7;"
+            "color:#ffffff;"
+            "}"
+            "QMenu{"
+            "background:#ffffff;"
+            "color:#000000;"
+            "border:1px solid #888888;"
+            "}"
+            "QMenu::item:selected{"
+            "background:#0078d7;"
+            "color:#ffffff;"
+            "}"
+        )
 
-        # Analytical Group (split home page)
+        # Analytical Group
         group_m = mb.addMenu("Analytical Group")
         self.action_group = QAction("Analytical Group", self)
         self.action_group.setCheckable(True)
@@ -65,20 +85,23 @@ class MainWindow(QMainWindow):
         self.action_analysis.triggered.connect(self._open_analysis_run)
         analysis_m.addAction(self.action_analysis)
 
-        # Initially set Analytical Group as checked
+        # Default: Analytical Group checked
         self.action_group.setChecked(True)
         self._current_action = self.action_group
 
     def _set_active_menu(self, action):
-        """Check the given action, uncheck the previous one."""
         if self._current_action:
             self._current_action.setChecked(False)
         action.setChecked(True)
         self._current_action = action
 
+    # =========================================================================
+    # Body
+    # =========================================================================
+
     def _build_body(self):
         root = QWidget()
-        root.setStyleSheet(Stylesheets.PANEL_MAIN)
+        root.setStyleSheet("background:#d4d0c8;")
         self.setCentralWidget(root)
 
         h = QHBoxLayout(root)
@@ -87,17 +110,17 @@ class MainWindow(QMainWindow):
 
         from ui.anainf.group_panel import GroupPanel
         self._group_panel = GroupPanel(self)
-        self._group_panel.setFixedWidth(Spacing.GROUP_PANEL_WIDTH)
+        self._group_panel.setFixedWidth(230)
         h.addWidget(self._group_panel)
 
         self._div = QFrame()
         self._div.setFrameShape(QFrame.Shape.VLine)
         self._div.setFrameShadow(QFrame.Shadow.Sunken)
-        self._div.setStyleSheet(f"color:{Colors.BORDER_LIGHT};")
+        self._div.setStyleSheet("color:#aaaaaa;")
         h.addWidget(self._div)
 
         self._right = QWidget()
-        self._right.setStyleSheet(Stylesheets.PANEL_MAIN)
+        self._right.setStyleSheet("background:#d4d0c8;")
         self._right_layout = QVBoxLayout(self._right)
         self._right_layout.setContentsMargins(0, 0, 0, 0)
         self._right_layout.setSpacing(0)
@@ -105,15 +128,19 @@ class MainWindow(QMainWindow):
 
         self._show_home_content()
 
+    # =========================================================================
+    # Right Panel Management
+    # =========================================================================
+
     def set_right_widget(self, widget):
-        # Clear existing widget from right area
+        # Clear existing
         while self._right_layout.count():
             item = self._right_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._right_layout.addWidget(widget)
 
-        # Check if the new widget wants full‑screen mode
+        # Fullscreen mode if widget wants it
         if hasattr(widget, 'wants_fullscreen') and callable(widget.wants_fullscreen):
             self.set_fullscreen_mode(widget.wants_fullscreen())
         else:
@@ -124,35 +151,48 @@ class MainWindow(QMainWindow):
         self._div.setVisible(visible)
 
     def set_fullscreen_mode(self, enabled: bool):
-        """Hide or show the left panel and divider."""
         self.set_left_panel_visible(not enabled)
 
+    # =========================================================================
+    # Home / Default View
+    # =========================================================================
+
     def _show_home_content(self):
-        # Switch to split home page
         self._set_active_menu(self.action_group)
         self.set_fullscreen_mode(False)
+
         w = QWidget()
-        w.setStyleSheet(Stylesheets.PANEL_MAIN)
+        w.setStyleSheet("background:#d4d0c8;")
         v = QVBoxLayout(w)
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         hint = QLabel("Select a group and double-click to open\nor use Analysis → Run Analysis")
-        hint.setStyleSheet(Stylesheets.LABEL_HINT)
+        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint.setStyleSheet(
+            "QLabel{"
+            "background:#d4d0c8;"
+            "color:#666666;"
+            "border:none;"
+            "font:9pt Arial;"
+            "}"
+        )
         v.addWidget(hint)
+
         self.set_right_widget(w)
+
+    # =========================================================================
+    # Status Bar (empty)
+    # =========================================================================
 
     def _build_status_bar(self):
         sb = QStatusBar()
-        sb.setStyleSheet(Stylesheets.STATUSBAR)
+        sb.setStyleSheet("background:#d4d0c8; color:#000000;")
         self.setStatusBar(sb)
+        # No text added - status bar is empty
 
-        self._clock_label = QLabel()
-        self._clock_label.setStyleSheet(Stylesheets.STATUS_LABEL_NORMAL)
-        sb.addPermanentWidget(self._clock_label)
-
-    def _update_clock(self):
-        self._clock_label.setText(
-            QDateTime.currentDateTime().toString("dd-MM-yyyy   hh:mm")
-        )
+    # =========================================================================
+    # Menu Actions
+    # =========================================================================
 
     def _open_source_codes(self):
         from ui.settings.source_codes_page import SourceCodesPage
@@ -169,7 +209,7 @@ class MainWindow(QMainWindow):
             gid, gname = self._group_panel._selected()
             if gid is not None:
                 return gid, gname
-        return 1, "Demo Group"
+        return None, None
 
     def _open_analysis_run(self):
         gid, gname = self._get_current_group()
@@ -177,5 +217,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Group", "Please select an analytical group first.")
             return
         self._set_active_menu(self.action_analysis)
+        from ui.analysis_run_page import AnalysisRunPage
         run_page = AnalysisRunPage(self, group_id=gid, group_name=gname)
         self.set_right_widget(run_page)

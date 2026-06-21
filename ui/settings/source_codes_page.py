@@ -14,7 +14,7 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import SourceCode
-from ui.ui_theme import Colors, Stylesheets, Spacing, Fonts, get_font, get_color
+
 NUM_ROWS = 16
 
 
@@ -23,83 +23,161 @@ class SourceCodesPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), get_color(Colors.BG_MAIN))
+        p.setColor(self.backgroundRole(), Qt.GlobalColor.lightGray)
         self.setPalette(p)
+
         self._build_ui()
         self._load()
+
+    # UI Construction
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Title bar
+        # ── Title Bar ──────────────────────────────────────────────────────
         bar = QLabel("Source Codes")
-        bar.setFixedHeight(22)
-        bar.setContentsMargins(8, 0, 0, 0)
+        bar.setFixedHeight(24)
+        bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        bar.setStyleSheet(Stylesheets.HEADER_BAR)
+        bar.setStyleSheet(
+            "background:#5c9bd5;"
+            "color:white;"
+            "font:bold 10pt Arial;"
+        )
         root.addWidget(bar)
 
-        # White outer frame
+        # ── Outer Frame ──────────────────────────────────────────────────
         outer = QFrame()
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet(Stylesheets.PANEL_WHITE)
+        outer.setStyleSheet("background:white;")
         root.addWidget(outer, stretch=1)
 
         ol = QVBoxLayout(outer)
-        ol.setContentsMargins(16, 16, 16, 8)
-        ol.setSpacing(10)
+        ol.setContentsMargins(0, 0, 0, 0)
 
-        info = QLabel(
-            "Entry No. (0–F) is the hardware command value sent over UART.\n"
-            "Edit the Name column to label each source type."
+        inner = QWidget()
+        inner.setAutoFillBackground(True)
+        ip = inner.palette()
+        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
+        inner.setPalette(ip)
+
+        ml = QVBoxLayout(inner)
+        ml.setContentsMargins(20, 16, 20, 12)
+        ml.setSpacing(8)
+
+        # ── Excel-Style Table ───────────────────────────────────────────
+        # Height = 16 rows × 27px + header (27px) = 459px
+        table_frame = QFrame()
+        table_frame.setStyleSheet(
+            "QFrame{"
+            "background:white;"
+            "border:1px solid #888888;"
+            "}"
         )
-        info.setStyleSheet(f"color:{Colors.TEXT_MEDIUM_GRAY};font:{Fonts.SIZE_NORMAL}pt {Fonts.FAMILY_DEFAULT};")
-        ol.addWidget(info)
+        table_frame.setFixedHeight(465)
 
-        # Table — 2 columns, 16 rows
         self.table = QTableWidget(NUM_ROWS, 2)
-        self.table.setHorizontalHeaderLabels(["Entry No.", "Name"])
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch)
+        self.table.setHorizontalHeaderLabels(["HexCode", "Name"])
+
+        # Excel-style table styling
+        self.table.setStyleSheet(
+            "QTableWidget{"
+            "background:white;"
+            "color:black;"
+            "border:none;"
+            "gridline-color:#888888;"
+            "font:9pt Arial;"
+            "}"
+            "QTableWidget::item{"
+            "border:1px solid #888888;"
+            "padding:0px 4px;"
+            "color:black;"
+            "}"
+            "QHeaderView::section{"
+            "background:#0078d7;"
+            "color:white;"
+            "font:bold 9pt Arial;"
+            "border:1px solid #888888;"
+            "padding:2px 4px;"
+            "}"
+            "QTableWidget::item:selected{"
+            "background:#cce5ff;"
+            "color:black;"
+            "}"
+            "QTableWidget::item:!selected{"
+            "color:black;"
+            "}"
+            "QLineEdit{"
+            "background:white;"
+            "color:black;"
+            "}"
+        )
+
+        # Column widths
         self.table.setColumnWidth(0, 100)
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
         self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.SelectedClicked |
             QAbstractItemView.EditTrigger.EditKeyPressed
         )
-        self.table.setStyleSheet(Stylesheets.TABLE_NORMAL)
-        ol.addWidget(self.table)
 
-        # Buttons
+        # Row height - exactly 27px per row
+        self.table.verticalHeader().setDefaultSectionSize(27)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        table_layout = QVBoxLayout(table_frame)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(0)
+        table_layout.addWidget(self.table)
+
+        ml.addWidget(table_frame)
+
+        # ── Buttons ──────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
+
+        btn_style = (
+            "QPushButton{"
+            "background:#d4d0c8;"
+            "color:black;"
+            "border:2px outset #aaaaaa;"
+            "font:9pt Arial;"
+            "padding:4px 12px;"
+            "min-width:60px;"
+            "}"
+            "QPushButton:pressed{"
+            "border:2px inset #888888;"
+            "}"
+        )
 
         for label, slot in [
-            ("Save",   self._on_save),
+            ("Save", self._on_save),
             ("Export", self._on_export),
             ("Import", self._on_import),
         ]:
             b = QPushButton(label)
-            b.setStyleSheet(Stylesheets.BUTTON_NORMAL)
+            b.setStyleSheet(btn_style)
             b.clicked.connect(slot)
             btn_row.addWidget(b)
 
         btn_row.addStretch()
-        ol.addLayout(btn_row)
-        
-    def wants_fullscreen(self) -> bool:
-        return True
+        ml.addLayout(btn_row)
+
+        ol.addWidget(inner)
+
+    # Data
 
     def _load(self):
         session = get_session()
@@ -119,7 +197,7 @@ class SourceCodesPage(QWidget):
             for sc in rows:
                 row = sc.entry_no
 
-                # Entry No — read only, grey background
+                # Entry No — read only, beige background
                 hex_item = QTableWidgetItem(format(sc.entry_no, 'X'))
                 hex_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 hex_item.setFlags(
@@ -127,14 +205,16 @@ class SourceCodesPage(QWidget):
                     Qt.ItemFlag.ItemIsEnabled
                 )
                 hex_item.setBackground(QColor("#d4d0c8"))
+                hex_item.setForeground(QColor("black"))
                 self.table.setItem(row, 0, hex_item)
 
-                # Name — editable
+                # Name — editable, text color explicitly set to black
                 name_item = QTableWidgetItem(sc.name or "")
                 name_item.setTextAlignment(
                     Qt.AlignmentFlag.AlignLeft |
                     Qt.AlignmentFlag.AlignVCenter
                 )
+                name_item.setForeground(QColor("black"))  # FIX: Text is now black
                 self.table.setItem(row, 1, name_item)
 
             self.table.blockSignals(False)
@@ -151,6 +231,8 @@ class SourceCodesPage(QWidget):
             })
         return rows
 
+    # Actions
+
     def _on_save(self):
         rows = self._collect()
         session = get_session()
@@ -163,8 +245,17 @@ class SourceCodesPage(QWidget):
                     session.add(SourceCode(
                         entry_no=r["entry_no"], name=r["name"]))
             session.commit()
-            QMessageBox.information(self, "Saved",
-                "Source codes saved successfully.")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setWindowTitle("Saved")
+            msg.setText("Source codes saved successfully.")
+            msg.setStyleSheet(
+                "QLabel { color: black; }"
+                "QPushButton { color: black; background-color: #d4d0c8; border: 1px solid gray; min-width: 60px; padding: 4px; }"
+            )
+            msg.exec()
+            # make the Source codes saved successfullly black text in the Qmessage
+            
         finally:
             session.close()
 
@@ -178,8 +269,7 @@ class SourceCodesPage(QWidget):
         try:
             with open(path, "w") as f:
                 json.dump({"source_codes": self._collect()}, f, indent=2)
-            QMessageBox.information(self, "Exported",
-                f"Source codes exported to:\n{path}")
+            QMessageBox.information(self, "Exported", f"Source codes exported to:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
@@ -212,7 +302,11 @@ class SourceCodesPage(QWidget):
             finally:
                 session.close()
             self._load()
-            QMessageBox.information(self, "Imported",
-                "Source codes imported successfully.")
+            QMessageBox.information(self, "Imported", "Source codes imported successfully.")
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
+
+    # Fullscreen mode
+
+    def wants_fullscreen(self) -> bool:
+        return True
