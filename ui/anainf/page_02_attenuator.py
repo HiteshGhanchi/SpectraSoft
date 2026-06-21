@@ -1,3 +1,30 @@
+"""
+SpectraSoft — Page 2: Attenuator Settings
+
+This page sets the sensitivity (ATT) for each element channel.
+ATT values range from 0 to 63 and control the gain of each PMT detector.
+
+Columns:
+- Element: Element name (read-only, from master table)
+- W.L.: Wavelength (read-only, from master table)
+- ATT: Attenuator value (0-63, editable)
+
+Rules:
+- ATT values must be between 0 and 63
+- Values are saved per element per group
+- Each element can have only one ATT value
+
+Saved JSON example:
+{
+    "rows": [
+        {"element": "FE", "wavelength": "271.4", "att_value": 45},
+        {"element": "C", "wavelength": "193.0", "att_value": 12},
+        {"element": "SI", "wavelength": "212.4", "att_value": 30},
+        ...
+    ]
+}
+"""
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QFrame, QTableWidget,
@@ -98,36 +125,9 @@ class AttenuatorPage(QWidget):
         finally:
             session.close()
 
+        # If no elements exist, show empty tables
         if element_count == 0:
-            # Create a default list if no elements exist
-            default_elements = [
-                {"ele_name": "SI", "wavelength": "212.4"},
-                {"ele_name": "MN", "wavelength": "293.3"},
-                {"ele_name": "P", "wavelength": "178.3"},
-                {"ele_name": "S", "wavelength": "180.7"},
-                {"ele_name": "V", "wavelength": "311.0"},
-                {"ele_name": "CR", "wavelength": "267.7"},
-                {"ele_name": "CR", "wavelength": "298.9"},
-                {"ele_name": "MO", "wavelength": "202.0"},
-                {"ele_name": "MO", "wavelength": "277.5"},
-                {"ele_name": "NI", "wavelength": "231.6"},
-                {"ele_name": "NI", "wavelength": "227.7"},
-                {"ele_name": "AL", "wavelength": "394.4"},
-                {"ele_name": "CU", "wavelength": "224.2"},
-                {"ele_name": "TI", "wavelength": "337.2"},
-                {"ele_name": "W", "wavelength": "220.4"},
-                {"ele_name": "B", "wavelength": "182.6"},
-                {"ele_name": "NB", "wavelength": "319.5"},
-                {"ele_name": "CA", "wavelength": "396.8"},
-                {"ele_name": "CO", "wavelength": "258.0"},
-                {"ele_name": "SN", "wavelength": "189.9"},
-                {"ele_name": "N", "wavelength": "174.5*2"},
-                {"ele_name": "PB", "wavelength": "405.7"},
-                {"ele_name": "RH", "wavelength": "421.8"},
-                {"ele_name": "CE", "wavelength": ""},
-            ]
-            elements = default_elements
-            element_count = len(elements)
+            elements = []
 
         # Split into two halves
         half = (element_count + 1) // 2
@@ -136,6 +136,8 @@ class AttenuatorPage(QWidget):
 
         # Pad to ensure both tables have same number of rows
         max_rows = max(len(left_elements), len(right_elements))
+        if max_rows == 0:
+            max_rows = 1  # At least one empty row to show the table
         if len(left_elements) < max_rows:
             left_elements = left_elements + [None] * (max_rows - len(left_elements))
         if len(right_elements) < max_rows:
@@ -249,7 +251,6 @@ class AttenuatorPage(QWidget):
             "QTableWidget::item:!selected{"
             "color:black;"
             "}"
-            # FIX: Force editor line edit to be black on white
             "QLineEdit{"
             "background:white;"
             "color:black;"
@@ -261,7 +262,7 @@ class AttenuatorPage(QWidget):
         table.setColumnWidth(1, 80)   # Wavelength
         table.setColumnWidth(2, 70)   # ATT
 
-        # FIX: Turn off scrollbars to avoid layout shifting
+        # Turn off scrollbars to avoid layout shifting
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         table.verticalHeader().setVisible(False)
@@ -278,15 +279,18 @@ class AttenuatorPage(QWidget):
         # Set row count
         table.setRowCount(row_count)
 
-        # FIX: Calculate exact table dimensions to remove empty space on the right
-        # Width: 70 + 80 + 70 + 2 (for 1px left/right borders) = 222
-        table.setFixedWidth(222)
-        
+        # Calculate exact table dimensions
+        table.setFixedWidth(222)  # 70 + 80 + 70 + borders
+
         # Height: rows × 27 + header (27) + borders
         table_height = (row_count * 27) + 27 + 3
         table.setFixedHeight(table_height)
 
         return table
+
+    # =========================================================================
+    # Table Population
+    # =========================================================================
 
     def _populate_table(self, table, elements):
         """Populate a table with element data."""
@@ -306,7 +310,6 @@ class AttenuatorPage(QWidget):
                 for col in range(3):
                     item = QTableWidgetItem("")
                     item.setFlags(Qt.ItemFlag.NoItemFlags)
-                    # FIX: Color the empty padding rows so the columns look uniformly gray
                     if col < 2:
                         item.setBackground(QColor("#e8e8e8"))
                     else:
@@ -346,12 +349,12 @@ class AttenuatorPage(QWidget):
             table.setItem(row, 2, att_item)
 
     # =========================================================================
-    # Data
+    # Data Operations
     # =========================================================================
 
     def _collect(self) -> dict:
+        """Collect data from both tables into a single dict."""
         rows = []
-        # Collect from both tables
         for table in [self._left_table, self._right_table]:
             for row in range(table.rowCount()):
                 ele_item = table.item(row, 0)
@@ -375,6 +378,7 @@ class AttenuatorPage(QWidget):
         return {"rows": rows}
 
     def _save(self):
+        """Save data to database."""
         session = get_session()
         try:
             g = session.get(AnalyticalGroup, self.group_id)
@@ -392,6 +396,11 @@ class AttenuatorPage(QWidget):
                 MasterElement.display_order).all()
 
             if not elements:
+                # No elements – show empty tables
+                self._left_table.setRowCount(1)
+                self._right_table.setRowCount(1)
+                self._populate_table(self._left_table, [None])
+                self._populate_table(self._right_table, [None])
                 return
 
             half = (len(elements) + 1) // 2
@@ -435,7 +444,6 @@ class AttenuatorPage(QWidget):
                 for col in range(3):
                     item = QTableWidgetItem("")
                     item.setFlags(Qt.ItemFlag.NoItemFlags)
-                    # FIX: Empty rows also get gray background for col 0 and 1
                     if col < 2:
                         item.setBackground(QColor("#e8e8e8"))
                     else:
@@ -478,6 +486,7 @@ class AttenuatorPage(QWidget):
     # =========================================================================
 
     def _show_msg(self, title, text, icon=QMessageBox.Icon.Information):
+        """Show a styled message box."""
         msg = QMessageBox(self)
         msg.setIcon(icon)
         msg.setWindowTitle(title)
@@ -499,6 +508,7 @@ class AttenuatorPage(QWidget):
         msg.exec()
 
     def _show_question(self, title, text):
+        """Show a styled question dialog."""
         msg = QMessageBox(self)
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle(title)
@@ -530,16 +540,16 @@ class AttenuatorPage(QWidget):
 
     def _on_next(self):
         self._save()
-        from ui.anainf.page_03_element import ElementPage
+        from ui.anainf.page_03_channel import ChannelPage
         self.main_window.set_right_widget(
-            ElementPage(self.main_window, self.group_id, self.group_name)
+            ChannelPage(self.main_window, self.group_id, self.group_name)
         )
 
     def _on_pre(self):
         self._save()
-        from ui.anainf.page_01_condition import AnalyticalConditionPage
+        from ui.anainf.page_01_source import SourceConditionPage
         self.main_window.set_right_widget(
-            AnalyticalConditionPage(self.main_window, self.group_id, self.group_name)
+            SourceConditionPage(self.main_window, self.group_id, self.group_name)
         )
 
     def _on_print(self):
@@ -547,7 +557,7 @@ class AttenuatorPage(QWidget):
 
     def _on_cancel(self):
         if self._show_question("Cancel", "Discard changes?") == QMessageBox.StandardButton.Yes:
-            from ui.anainf.page_01_condition import AnalyticalConditionPage
+            from ui.anainf.page_01_source import AnalyticalConditionPage
             self.main_window.set_right_widget(
                 AnalyticalConditionPage(self.main_window, self.group_id, self.group_name)
             )

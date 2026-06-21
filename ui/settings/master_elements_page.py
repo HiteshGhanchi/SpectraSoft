@@ -4,6 +4,17 @@ SpectraSoft — Master Elements Settings Page
 Editable list of all elements the spectrometer supports.
 Loads from DB only — no hardcoded defaults.
 Export/Import via JSON file.
+
+Columns:
+- ITG No.: Integrator number (primary key, used as hardware channel identifier)
+- Ele. Name: Element symbol (e.g., FE, C, SI)
+- Chemical Name: Full element name (e.g., Iron, Carbon)
+- Wavelength: Wavelength in nm (e.g., 271.4, 193.0)
+
+Rules:
+- ITG No. must be unique (primary key)
+- Ele. Name is required
+- ITG No. is used as the primary key in the database
 """
 
 import json
@@ -17,7 +28,6 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import MasterElement
-from ui.ui_theme import Colors, Stylesheets, Spacing, Fonts, get_font, get_color
 
 
 class MasterElementsPage(QWidget):
@@ -25,109 +35,227 @@ class MasterElementsPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+
         self.setAutoFillBackground(True)
         p = self.palette()
-        p.setColor(self.backgroundRole(), get_color(Colors.BG_MAIN))
+        p.setColor(self.backgroundRole(), Qt.GlobalColor.lightGray)
         self.setPalette(p)
+
         self._build_ui()
         self._load()
+
+    # =========================================================================
+    # UI Construction
+    # =========================================================================
 
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
+        # ── Title Bar ──────────────────────────────────────────────────────
         bar = QLabel("Master Elements")
-        bar.setFixedHeight(22)
-        bar.setContentsMargins(8, 0, 0, 0)
+        bar.setFixedHeight(24)
+        bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        bar.setStyleSheet(Stylesheets.HEADER_BAR)
+        bar.setStyleSheet(
+            "background:#5c9bd5;"
+            "color:white;"
+            "font:bold 10pt Arial;"
+        )
         root.addWidget(bar)
 
+        # ── Outer Frame ──────────────────────────────────────────────────
         outer = QFrame()
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet(Stylesheets.PANEL_WHITE)
+        outer.setStyleSheet("background:white;")
         root.addWidget(outer, stretch=1)
 
         ol = QVBoxLayout(outer)
-        ol.setContentsMargins(16, 16, 16, 8)
-        ol.setSpacing(10)
+        ol.setContentsMargins(0, 0, 0, 0)
 
+        inner = QWidget()
+        inner.setAutoFillBackground(True)
+        ip = inner.palette()
+        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
+        inner.setPalette(ip)
+
+        ml = QVBoxLayout(inner)
+        ml.setContentsMargins(20, 16, 20, 12)
+        ml.setSpacing(8)
+
+        # ── Info Text ────────────────────────────────────────────────────
         info = QLabel(
             "Define all elements the spectrometer supports.\n"
-            "These populate the Attenuator page and element pickers."
+            "ITG No. is the hardware channel number (primary key)."
         )
-        info.setStyleSheet(f"color:{Colors.TEXT_MEDIUM_GRAY};font:{Fonts.SIZE_NORMAL}pt {Fonts.FAMILY_DEFAULT};")
-        ol.addWidget(info)
+        info.setStyleSheet(
+            "QLabel{"
+            "background:#d4d0c8;"
+            "color:#666666;"
+            "font:9pt Arial;"
+            "border:none;"
+            "padding:2px 0px;"
+            "}"
+        )
+        ml.addWidget(info)
+
+        # ── Excel-Style Table ───────────────────────────────────────────
+        table_frame = QFrame()
+        table_frame.setStyleSheet(
+            "QFrame{"
+            "background:white;"
+            "border:1px solid #888888;"
+            "}"
+        )
 
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels([
             "ITG No.", "Ele. Name", "Chemical Name", "Wavelength"
         ])
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnWidth(0, 80)
-        self.table.setColumnWidth(1, 100)
-        self.table.setColumnWidth(2, 120)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setStyleSheet(Stylesheets.TABLE_NORMAL)
-        ol.addWidget(self.table)
 
+        # Excel-style table styling
+        self.table.setStyleSheet(
+            "QTableWidget{"
+            "background:white;"
+            "color:black;"
+            "border:none;"
+            "gridline-color:#888888;"
+            "font:9pt Arial;"
+            "}"
+            "QTableWidget::item{"
+            "border:1px solid #888888;"
+            "padding:0px 4px;"
+            "color:black;"
+            "}"
+            "QHeaderView::section{"
+            "background:#0078d7;"
+            "color:white;"
+            "font:bold 9pt Arial;"
+            "border:1px solid #888888;"
+            "padding:2px 4px;"
+            "}"
+            "QTableWidget::item:selected{"
+            "background:#cce5ff;"
+            "color:black;"
+            "}"
+            "QTableWidget::item:!selected{"
+            "color:black;"
+            "}"
+            "QTableWidget QLineEdit{"
+            "background:white;"
+            "color:black;"
+            "}"
+        )
+
+        # Column widths
+        self.table.setColumnWidth(0, 80)   # ITG No.
+        self.table.setColumnWidth(1, 100)  # Ele. Name
+        self.table.setColumnWidth(2, 120)  # Chemical Name
+        self.table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.Stretch
+        )
+
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+
+        # Row height - 27px consistent
+        self.table.verticalHeader().setDefaultSectionSize(27)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        table_layout = QVBoxLayout(table_frame)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        table_layout.setSpacing(0)
+        table_layout.addWidget(self.table)
+
+        ml.addWidget(table_frame)
+
+        # ── Buttons ──────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
+
+        btn_style = (
+            "QPushButton{"
+            "background:#d4d0c8;"
+            "color:black;"
+            "border:2px outset #aaaaaa;"
+            "font:9pt Arial;"
+            "padding:4px 12px;"
+            "min-width:60px;"
+            "}"
+            "QPushButton:pressed{"
+            "border:2px inset #888888;"
+            "}"
+        )
+
         for label, slot in [
-            ("Add Row",    self._on_add),
+            ("Add Row", self._on_add),
             ("Delete Row", self._on_delete),
-            ("Save",       self._on_save),
-            ("Export",     self._on_export),
-            ("Import",     self._on_import),
+            ("Save", self._on_save),
+            ("Export", self._on_export),
+            ("Import", self._on_import),
         ]:
             b = QPushButton(label)
-            b.setStyleSheet(Stylesheets.BUTTON_NORMAL)
+            b.setStyleSheet(btn_style)
             b.clicked.connect(slot)
             btn_row.addWidget(b)
-        btn_row.addStretch()
-        ol.addLayout(btn_row)
 
-    def _add_row(self, itg_no="", ele_name="",
-                 chemical_name="", wavelength=""):
+        btn_row.addStretch()
+        ml.addLayout(btn_row)
+
+        ol.addWidget(inner)
+
+    # =========================================================================
+    # Data
+    # =========================================================================
+
+    def _add_row(self, itg_no="", ele_name="", chemical_name="", wavelength=""):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        for col, val in enumerate([
-            str(itg_no), ele_name, chemical_name, wavelength
-        ]):
-            item = QTableWidgetItem(val)
-            item.setTextAlignment(
-                Qt.AlignmentFlag.AlignLeft |
-                Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row, col, item)
+        # ITG No. column (editable, but must be unique)
+        itg_item = QTableWidgetItem(str(itg_no))
+        itg_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(row, 0, itg_item)
+
+        # Ele. Name
+        ele_item = QTableWidgetItem(ele_name)
+        ele_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(row, 1, ele_item)
+
+        # Chemical Name
+        chem_item = QTableWidgetItem(chemical_name)
+        chem_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(row, 2, chem_item)
+
+        # Wavelength
+        wl_item = QTableWidgetItem(wavelength)
+        wl_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(row, 3, wl_item)
 
     def _load(self):
-        """Load from DB only. If empty, table stays empty."""
+        """Load from DB. If empty, table stays empty."""
         session = get_session()
         try:
             rows = session.query(MasterElement).order_by(
                 MasterElement.display_order,
-                MasterElement.id).all()
+                MasterElement.itg_no).all()
             self.table.setRowCount(0)
             for r in rows:
-                self._add_row(r.itg_no, r.ele_name,
-                              r.chemical_name, r.wavelength)
+                self._add_row(
+                    r.itg_no,
+                    r.ele_name,
+                    r.chemical_name,
+                    r.wavelength
+                )
         finally:
             session.close()
-            
-    def wants_fullscreen(self) -> bool:
-        return True
 
     def _collect(self) -> list:
         rows = []
@@ -135,13 +263,20 @@ class MasterElementsPage(QWidget):
             def cell(col, r=row):
                 item = self.table.item(r, col)
                 return item.text().strip() if item else ""
+            itg_val = cell(0)
+            if not itg_val:
+                continue  # skip rows without ITG
             rows.append({
-                "itg_no":        cell(0),
-                "ele_name":      cell(1),
+                "itg_no": itg_val,
+                "ele_name": cell(1),
                 "chemical_name": cell(2),
-                "wavelength":    cell(3),
+                "wavelength": cell(3),
             })
         return rows
+
+    # =========================================================================
+    # Actions
+    # =========================================================================
 
     def _on_add(self):
         self._add_row()
@@ -158,26 +293,55 @@ class MasterElementsPage(QWidget):
         rows = self._collect()
         session = get_session()
         try:
-            session.query(MasterElement).delete()
-            for i, r in enumerate(rows):
-                if not r["ele_name"]:
-                    continue
+            # We'll update or insert based on itg_no.
+            # First get all existing ITG numbers from DB.
+            existing_itgs = {r.itg_no for r in session.query(MasterElement).all()}
+            new_itgs = set()
+
+            for r in rows:
                 try:
-                    itg = int(r["itg_no"]) if r["itg_no"] else i + 1
+                    itg = int(r["itg_no"])
                 except ValueError:
-                    itg = i + 1
-                session.add(MasterElement(
-                    ele_name=r["ele_name"],
-                    chemical_name=r["chemical_name"],
-                    wavelength=r["wavelength"],
-                    itg_no=itg,
-                    display_order=i
-                ))
+                    QMessageBox.warning(self, "Invalid ITG",
+                        f"ITG No. '{r['itg_no']}' is not a valid integer.")
+                    return
+                if itg in new_itgs:
+                    QMessageBox.warning(self, "Duplicate ITG",
+                        f"ITG No. '{itg}' appears more than once.")
+                    return
+                new_itgs.add(itg)
+
+                # Check if this ITG already exists
+                existing = session.query(MasterElement).filter_by(itg_no=itg).first()
+                if existing:
+                    # Update existing
+                    existing.ele_name = r["ele_name"]
+                    existing.chemical_name = r["chemical_name"]
+                    existing.wavelength = r["wavelength"]
+                else:
+                    # Insert new
+                    session.add(MasterElement(
+                        itg_no=itg,
+                        ele_name=r["ele_name"],
+                        chemical_name=r["chemical_name"],
+                        wavelength=r["wavelength"],
+                        display_order=len(existing_itgs)  # simplistic; user can reorder later
+                    ))
+
+            # Delete rows that are not in the new list
+            to_delete = existing_itgs - new_itgs
+            for itg in to_delete:
+                session.query(MasterElement).filter_by(itg_no=itg).delete()
+
             session.commit()
             QMessageBox.information(self, "Saved",
                 "Master elements saved successfully.")
+        except Exception as e:
+            session.rollback()
+            QMessageBox.critical(self, "Save Failed", str(e))
         finally:
             session.close()
+        self._load()  # refresh
 
     def _on_export(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -209,6 +373,7 @@ class MasterElementsPage(QWidget):
                 return
             session = get_session()
             try:
+                # Clear existing
                 session.query(MasterElement).delete()
                 for i, r in enumerate(rows):
                     if not r.get("ele_name"):
@@ -218,10 +383,10 @@ class MasterElementsPage(QWidget):
                     except (ValueError, TypeError):
                         itg = i + 1
                     session.add(MasterElement(
+                        itg_no=itg,
                         ele_name=r.get("ele_name", ""),
                         chemical_name=r.get("chemical_name", ""),
                         wavelength=r.get("wavelength", ""),
-                        itg_no=itg,
                         display_order=i
                     ))
                 session.commit()
@@ -232,3 +397,10 @@ class MasterElementsPage(QWidget):
                 "Master elements imported successfully.")
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
+
+    # =========================================================================
+    # Fullscreen mode
+    # =========================================================================
+
+    def wants_fullscreen(self) -> bool:
+        return True

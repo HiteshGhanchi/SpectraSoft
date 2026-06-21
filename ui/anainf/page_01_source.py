@@ -1,3 +1,50 @@
+"""
+SpectraSoft — Page 1: Analytical Condition
+
+This page defines the physical parameters for the excitation source and the
+sequence of the burn process for an analytical group.
+
+Fields:
+- Purge: Argon flush time (in 0.1 sec units)
+- SEQ1/SEQ2/SEQ3 Source: Spark type for each sequence (dropdown from Source Codes)
+- SEQ1/SEQ2/SEQ3 Preburn: Pre-spark time to homogenize sample (in 0.1 sec units)
+- SEQ1/SEQ2/SEQ3 Integ: Integration/measurement window (in 0.1 sec units)
+- Clean Source: Spark type for cleaning (dropdown from Source Codes)
+- Clean: Cleaning spark time (in 0.1 sec units)
+
+Rules:
+- Purge applies only to SEQ1 (SEQ2 and SEQ3 are read-only)
+- Clean applies only to Clean column (SEQ1-3 are read-only)
+- Preburn and Integ are editable for SEQ1, SEQ2, SEQ3
+- Source is editable for SEQ1, SEQ2, SEQ3, and Clean
+- All values are stored in the page_01_condition JSON field
+
+Source Types (from Source Codes table):
+  - 1: Normal Spark (standard for most elements)
+  - 3: Combined Spark (for trace elements like P, S)
+  - 4: Oscillation Spark (for gray cast iron)
+  - 5: High Power Spark (for carbon in steel)
+  - HVS: High Voltage Spark (for aluminum/magnesium alloys)
+  - 6: Cleaning Spark (reverse polarity cleaning)
+
+Saved JSON example:
+{
+    "purge_seq1": "3",
+    "source_seq1": "1: Normal Spark",
+    "source_seq2": "2: High Power Spark",
+    "source_seq3": "0: Fatigue Lamp",
+    "source_clean": "5: Cleaning Spark",
+    "preburn_seq1": "200",
+    "preburn_seq2": "200",
+    "preburn_seq3": "0",
+    "integ_seq1": "300",
+    "integ_seq2": "23",
+    "integ_seq3": "0",
+    "clean_value": "0"
+}
+"""
+
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton,
@@ -22,8 +69,7 @@ def _load_source_options() -> list:
         session.close()
 
 
-class AnalyticalConditionPage(QWidget):
-
+class SourceConditionPage(QWidget):
     def __init__(self, main_window, group_id: int, group_name: str):
         super().__init__()
         self.main_window = main_window
@@ -398,7 +444,7 @@ class AnalyticalConditionPage(QWidget):
         try:
             g = session.get(AnalyticalGroup, self.group_id)
             if g:
-                g.page_01_condition = self._collect()
+                g.page_01_source = self._collect()
                 session.commit()
         finally:
             session.close()
@@ -407,8 +453,8 @@ class AnalyticalConditionPage(QWidget):
         session = get_session()
         try:
             g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_01_condition:
-                self._apply(g.page_01_condition)
+            if g and g.page_01_source:
+                self._apply(g.page_01_source)
         finally:
             session.close()
 

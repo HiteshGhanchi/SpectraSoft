@@ -17,19 +17,15 @@ class AnalyticalGroup(Base):
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    page_01_condition      = Column(JSON, default=dict)
+    page_01_source         = Column(JSON, default=dict)
     page_02_attenuator     = Column(JSON, default=dict)
-    page_03_element        = Column(JSON, default=dict)
-    page_04_channel        = Column(JSON, default=dict)
-    page_05_measurement    = Column(JSON, default=dict)
-    page_06_recalibration  = Column(JSON, default=dict)
-    page_07_working_curve  = Column(JSON, default=dict)
-    page_08_correction     = Column(JSON, default=dict)
-    page_09_standard       = Column(JSON, default=dict)
-    page_10_display        = Column(JSON, default=dict)
-    page_11_master_curve   = Column(JSON, default=dict)
-    page_12_analytical_mode = Column(JSON, default=dict)
-    page_13_control_chart  = Column(JSON, default=dict)
+    page_03_channel        = Column(JSON, default=dict)
+    page_04_drift          = Column(JSON, default=dict)
+    page_05_wc             = Column(JSON, default=dict)
+    page_06_matrix         = Column(JSON, default=dict)
+    page_07_master         = Column(JSON, default=dict)
+    page_08_display        = Column(JSON, default=dict)
+    page_09_purity         = Column(JSON, default=dict)
 
     def __repr__(self):
         return f"<AnalyticalGroup(id={self.id}, name='{self.name}')>"
@@ -61,15 +57,16 @@ class MasterElement(Base):
     Master list of all elements the spectrometer supports.
     Users can add/edit/remove entries from the Settings page.
     Page 02 (Attenuator) and other pages pull from this table.
+
+    itg_no is the primary key (hardware channel identifier).
     """
     __tablename__ = "master_elements"
 
-    id            = Column(Integer, primary_key=True, autoincrement=True)
-    ele_name      = Column(String(20), nullable=False)   # e.g. "FE", "CR"
-    chemical_name = Column(String(20), default="")       # e.g. "Fe", "Cr"
-    wavelength    = Column(String(20), default="")       # e.g. "273.0", "174.5*2"
-    itg_no        = Column(Integer, default=0)           # integration channel number
-    display_order = Column(Integer, default=0)           # order shown in lists
+    itg_no = Column(Integer, primary_key=True)           # primary key, user‑defined
+    ele_name = Column(String(20), nullable=False)        # e.g., "FE"
+    chemical_name = Column(String(20), default="")       # e.g., "Iron"
+    wavelength = Column(String(20), default="")          # e.g., "271.4"
+    display_order = Column(Integer, default=0)           # for sorting
 
     def __repr__(self):
-        return f"<MasterElement(ele_name='{self.ele_name}', wavelength='{self.wavelength}')>"
+        return f"<MasterElement(itg_no={self.itg_no}, ele_name='{self.ele_name}')>"

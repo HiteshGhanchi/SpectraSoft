@@ -186,9 +186,9 @@ class GroupPanel(QWidget):
         if gid is None:
             return
 
-        from ui.anainf.page_01_condition import AnalyticalConditionPage
+        from ui.anainf.page_01_source import SourceConditionPage
         self.main_window.set_right_widget(
-            AnalyticalConditionPage(self.main_window, gid, name)
+            SourceConditionPage(self.main_window, gid, name)
         )
 
     def _on_new(self):
