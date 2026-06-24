@@ -24,6 +24,20 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_body()
         self._build_status_bar()
+        self.hv_on = False
+        
+    # =========================================================================
+    # HV Toggle
+    # =========================================================================
+
+    def toggle_hv(self):
+        self.hv_on = not self.hv_on
+        # TODO: Send command to MCU
+        # For simulation, just toggle
+        return self.hv_on
+
+    def get_hv_status(self):
+        return self.hv_on
 
     # =========================================================================
     # Menu
@@ -78,12 +92,22 @@ class MainWindow(QMainWindow):
         self.action_source.triggered.connect(self._open_source_codes)
         source_m.addAction(self.action_source)
 
-        # Analysis
+        # ⭐ Analysis Menu with both options
         analysis_m = mb.addMenu("Analysis")
-        self.action_analysis = QAction("Run Analysis", self)
+        
+        # Option 1: Job Selection (Real Analysis)
+        self.action_analysis = QAction("Analysis Jobs", self)
         self.action_analysis.setCheckable(True)
-        self.action_analysis.triggered.connect(self._open_analysis_run)
+        self.action_analysis.triggered.connect(self._open_job_selection)
         analysis_m.addAction(self.action_analysis)
+        
+        analysis_m.addSeparator()
+        
+        # Option 2: Simulation (Test Mode)
+        self.action_simulation = QAction("Simulation (Test)", self)
+        self.action_simulation.setCheckable(True)
+        self.action_simulation.triggered.connect(self._open_simulation)
+        analysis_m.addAction(self.action_simulation)
 
         # Default: Analytical Group checked
         self.action_group.setChecked(True)
@@ -166,7 +190,10 @@ class MainWindow(QMainWindow):
         v = QVBoxLayout(w)
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        hint = QLabel("Select a group and double-click to open\nor use Analysis → Run Analysis")
+        hint = QLabel(
+            "Select a group and double-click to open\n"
+            "or use Analysis → Analysis Jobs (real) / Simulation (test)"
+        )
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet(
             "QLabel{"
@@ -211,12 +238,22 @@ class MainWindow(QMainWindow):
                 return gid, gname
         return None, None
 
-    def _open_analysis_run(self):
+    def _open_job_selection(self):
+        """Open the real analysis job selection page."""
+        self._set_active_menu(self.action_analysis)
+        from ui.analysis.job_selection import JobSelectionPage
+        self.set_right_widget(JobSelectionPage(self))
+
+    def _open_simulation(self):
+        """Open the existing simulation page."""
+        self._set_active_menu(self.action_simulation)
+        from ui.analysis_run_page import AnalysisRunPage
+        
+        # Get current group (or use a default if none selected)
         gid, gname = self._get_current_group()
         if gid is None:
-            QMessageBox.warning(self, "No Group", "Please select an analytical group first.")
-            return
-        self._set_active_menu(self.action_analysis)
-        from ui.analysis_run_page import AnalysisRunPage
+            gid = 1
+            gname = "Demo Group"
+        
         run_page = AnalysisRunPage(self, group_id=gid, group_name=gname)
         self.set_right_widget(run_page)

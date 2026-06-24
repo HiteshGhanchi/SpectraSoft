@@ -1,158 +1,146 @@
 {
   "master_elements": [
     {
-      "itg_no": 1,
+      "itg_no": "1",
       "ele_name": "FE",
       "chemical_name": "Fe",
-      "wavelength": "273.0"
+      "wavelength": "271.4"
     },
     {
-      "itg_no": 2,
+      "itg_no": "2",
       "ele_name": "C",
       "chemical_name": "C",
       "wavelength": "193.0"
     },
     {
-      "itg_no": 3,
+      "itg_no": "3",
       "ele_name": "SI",
       "chemical_name": "Si",
       "wavelength": "212.4"
     },
     {
-      "itg_no": 4,
-      "ele_name": "MN",
+      "itg_no": "4",
+      "ele_name": "MN1",
       "chemical_name": "Mn",
       "wavelength": "293.3"
     },
     {
-      "itg_no": 5,
+      "itg_no": "5",
+      "ele_name": "MN2",
+      "chemical_name": "Mn",
+      "wavelength": "290.0"
+    },
+    {
+      "itg_no": "6",
       "ele_name": "P",
       "chemical_name": "P",
       "wavelength": "178.3"
     },
     {
-      "itg_no": 6,
+      "itg_no": "7",
       "ele_name": "S",
       "chemical_name": "S",
       "wavelength": "180.7"
     },
     {
-      "itg_no": 7,
-      "ele_name": "V",
-      "chemical_name": "V",
-      "wavelength": "311.0"
+      "itg_no": "8",
+      "ele_name": "NI1",
+      "chemical_name": "Ni",
+      "wavelength": "231.6"
     },
     {
-      "itg_no": 8,
-      "ele_name": "CR",
+      "itg_no": "9",
+      "ele_name": "NI2",
+      "chemical_name": "Ni",
+      "wavelength": "227.2"
+    },
+    {
+      "itg_no": "10",
+      "ele_name": "CR1",
       "chemical_name": "Cr",
       "wavelength": "267.7"
     },
     {
-      "itg_no": 9,
-      "ele_name": "CR",
+      "itg_no": "11",
+      "ele_name": "CR2",
       "chemical_name": "Cr",
       "wavelength": "298.9"
     },
     {
-      "itg_no": 10,
+      "itg_no": "12",
       "ele_name": "MO",
       "chemical_name": "Mo",
       "wavelength": "202.0"
     },
     {
-      "itg_no": 11,
-      "ele_name": "MO",
-      "chemical_name": "Mo",
-      "wavelength": "277.5"
-    },
-    {
-      "itg_no": 12,
-      "ele_name": "NI",
-      "chemical_name": "Ni",
-      "wavelength": "231.6"
-    },
-    {
-      "itg_no": 13,
-      "ele_name": "NI",
-      "chemical_name": "Ni",
-      "wavelength": "227.7"
-    },
-    {
-      "itg_no": 14,
+      "itg_no": "13",
       "ele_name": "AL",
       "chemical_name": "Al",
-      "wavelength": "394.4"
+      "wavelength": "396.1"
     },
     {
-      "itg_no": 15,
+      "itg_no": "14",
+      "ele_name": "V",
+      "chemical_name": "V",
+      "wavelength": "311.0"
+    },
+    {
+      "itg_no": "15",
+      "ele_name": "NB",
+      "chemical_name": "Nb",
+      "wavelength": "319.4"
+    },
+    {
+      "itg_no": "16",
       "ele_name": "CU",
       "chemical_name": "Cu",
-      "wavelength": "224.2"
+      "wavelength": "327.3"
     },
     {
-      "itg_no": 16,
+      "itg_no": "17",
       "ele_name": "TI",
       "chemical_name": "Ti",
       "wavelength": "337.2"
     },
     {
-      "itg_no": 17,
-      "ele_name": "W",
-      "chemical_name": "W",
-      "wavelength": "220.4"
+      "itg_no": "18",
+      "ele_name": "MG",
+      "chemical_name": "Mg",
+      "wavelength": "280.2"
     },
     {
-      "itg_no": 18,
+      "itg_no": "35",
+      "ele_name": "A",
+      "chemical_name": "",
+      "wavelength": ""
+    },
+    {
+      "itg_no": "36",
       "ele_name": "B",
-      "chemical_name": "B",
-      "wavelength": "182.6"
+      "chemical_name": "",
+      "wavelength": ""
     },
     {
-      "itg_no": 19,
-      "ele_name": "NB",
-      "chemical_name": "Nb",
-      "wavelength": "319.5"
+      "itg_no": "37",
+      "ele_name": "C",
+      "chemical_name": "",
+      "wavelength": ""
     },
     {
-      "itg_no": 20,
-      "ele_name": "CA",
-      "chemical_name": "Ca",
-      "wavelength": "396.8"
+      "itg_no": "43",
+      "ele_name": "D",
+      "chemical_name": "",
+      "wavelength": ""
     },
     {
-      "itg_no": 21,
-      "ele_name": "CO",
-      "chemical_name": "Co",
-      "wavelength": "258.0"
+      "itg_no": "44",
+      "ele_name": "E",
+      "chemical_name": "",
+      "wavelength": ""
     },
     {
-      "itg_no": 22,
-      "ele_name": "SN",
-      "chemical_name": "Sn",
-      "wavelength": "189.9"
-    },
-    {
-      "itg_no": 23,
-      "ele_name": "N",
-      "chemical_name": "N",
-      "wavelength": "174.5*2"
-    },
-    {
-      "itg_no": 24,
-      "ele_name": "PB",
-      "chemical_name": "Pb",
-      "wavelength": "405.7"
-    },
-    {
-      "itg_no": 25,
-      "ele_name": "RH",
-      "chemical_name": "Rh",
-      "wavelength": "421.8"
-    },
-    {
-      "itg_no": 26,
-      "ele_name": "CE",
+      "itg_no": "45",
+      "ele_name": "F",
       "chemical_name": "",
       "wavelength": ""
     }

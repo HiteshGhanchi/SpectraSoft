@@ -41,37 +41,102 @@ try:
 except ImportError:
     SERIAL_AVAILABLE = False
 
-# ── Import our own constants (hardware section) ────────────────────────────
-# We import only what we need; placeholders stay in constants.py
-from constants import (
-    SIMULATION_MODE,
-    UART_BAUDRATE, UART_TIMEOUT,
-    UART_BYTESIZE, UART_PARITY, UART_STOPBITS,
-    ADC_READ_TIMEOUT, SIMULATION_ADC_VALUE,
-    ELEMENT_CHANNEL_MAP, SOURCE_7BIT_MAP,
-    MODE_ELEMENT_SELECT, MODE_ATTENUATOR_SET,
-    MODE_SENSOR_1, MODE_SENSOR_2,
-    PURGE_CODE_SENSOR1_6BIT, PURGE_CODE_SENSOR2_6BIT,
-    PREBURN_CODE_SENSOR1_6BIT, PREBURN_CODE_SENSOR2_6BIT,
-    INTEGRATION_CODE_SENSOR1_6BIT, INTEGRATION_CODE_SENSOR2_6BIT,
-    OUTPUT_CODE_SENSOR1_6BIT, OUTPUT_CODE_SENSOR2_6BIT,
-    CLEAN_CODE_SENSOR1_6BIT, CLEAN_CODE_SENSOR2_6BIT,
-    ATTENUATOR_MIN, ATTENUATOR_MAX,
-)
+# =============================================================================
+# CONSTANTS (were previously in constants.py)
+# =============================================================================
 
+# Simulation mode (set to False to use real hardware)
+SIMULATION_MODE = True
 
-# ---------------------------------------------------------------------------
+# UART settings
+UART_BAUDRATE = 9600
+UART_TIMEOUT = 1.0
+UART_BYTESIZE = serial.EIGHTBITS
+UART_PARITY = serial.PARITY_NONE
+UART_STOPBITS = serial.STOPBITS_ONE
+
+# ADC read timeout (seconds)
+ADC_READ_TIMEOUT = 2.0
+
+# Simulation ADC base value (will be randomized around this)
+SIMULATION_ADC_VALUE = 2048
+
+# ── Element channel map: (element, wavelength) → (channel_name, channel_id) ──
+ELEMENT_CHANNEL_MAP = {
+    ("FE", "273.0"):   ("Fe", 1),
+    ("FE", "271.4"):   ("Fe", 1),
+    ("C", "193.0"):    ("C", 2),
+    ("SI", "212.4"):   ("Si", 3),
+    ("MN", "293.3"):   ("Mn", 4),
+    ("P", "178.3"):    ("P", 5),
+    ("S", "180.7"):    ("S", 6),
+    ("CR", "267.7"):   ("Cr", 7),
+    ("CR", "298.9"):   ("Cr", 8),
+    ("MO", "202.0"):   ("Mo", 9),
+    ("MO", "277.5"):   ("Mo", 10),
+    ("NI", "231.6"):   ("Ni", 11),
+    ("NI", "227.7"):   ("Ni", 12),
+    ("AL", "394.4"):   ("Al", 13),
+    ("CU", "224.2"):   ("Cu", 14),
+    ("TI", "337.2"):   ("Ti", 15),
+    ("W", "220.4"):    ("W", 16),
+    ("B", "182.6"):    ("B", 17),
+    ("NB", "319.5"):   ("Nb", 18),
+    ("CA", "396.8"):   ("Ca", 19),
+    ("CO", "258.0"):   ("Co", 20),
+    ("SN", "189.9"):   ("Sn", 21),
+    ("N", "174.5*2"):  ("N", 22),
+    ("PB", "405.7"):   ("Pb", 23),
+    ("RH", "421.8"):   ("Rh", 24),
+    ("CE", ""):        ("Ce", 25),
+}
+
+# ── Source mapping (Port B 7-bit values) ──
+SOURCE_7BIT_MAP = {
+    "1: Normal Spark":   0x0C,
+    "2: High Power Spark": 0x14,
+    "3: Combined Spark": 0x24,
+    "4: Oscillation Spark": 0x44,
+    "5: Cleaning Spark": 0x44,
+    "0: Lamp":           0x00,
+}
+
+# ── Mode and code constants (2-bit mode + 6-bit data) ──
+MODE_ELEMENT_SELECT = 0x00
+MODE_ATTENUATOR_SET = 0x01
+MODE_SENSOR_1       = 0x02
+MODE_SENSOR_2       = 0x03
+
+# Sensor 1 (6‑bit) codes
+PURGE_CODE_SENSOR1_6BIT     = 0x0A
+PREBURN_CODE_SENSOR1_6BIT   = 0x0B
+INTEGRATION_CODE_SENSOR1_6BIT = 0x0C
+OUTPUT_CODE_SENSOR1_6BIT    = 0x0D
+CLEAN_CODE_SENSOR1_6BIT     = 0x0E
+
+# Sensor 2 (6‑bit) codes
+PURGE_CODE_SENSOR2_6BIT     = 0x1A
+PREBURN_CODE_SENSOR2_6BIT   = 0x1B
+INTEGRATION_CODE_SENSOR2_6BIT = 0x1C
+OUTPUT_CODE_SENSOR2_6BIT    = 0x1D
+CLEAN_CODE_SENSOR2_6BIT     = 0x1E
+
+# Attenuator range
+ATTENUATOR_MIN = 0
+ATTENUATOR_MAX = 63
+
+# =============================================================================
 # Helper — build 8-bit command byte
-# ---------------------------------------------------------------------------
+# =============================================================================
 
 def _make_byte(mode_2bit: int, data_6bit: int) -> int:
     """Pack 2-bit mode and 6-bit data into one byte."""
     return ((mode_2bit & 0b11) << 6) | (data_6bit & 0x3F)
 
 
-# ---------------------------------------------------------------------------
+# =============================================================================
 # HardwareManager
-# ---------------------------------------------------------------------------
+# =============================================================================
 
 class HardwareManager:
     """
