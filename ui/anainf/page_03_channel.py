@@ -2,7 +2,7 @@
 SpectraSoft — Page 3: Order of Analytical Channel & Internal Standard
 
 This page maps hardware channels (ITG) to elements, assigns sequences,
-and selects the Internal Standard Element (ISE).
+and selects the Internal Standard Element (ISE) reference for each element.
 
 Columns:
 - AR-No.: Auto-numbered 1 to 32 (read-only)
@@ -10,18 +10,20 @@ Columns:
 - ELE: Element name – auto-filled from ITG (read-only)
 - NAME: User-defined name (up to 5 chars) – editable
 - SEQ: Sequence assignment (1, 2, or 3) – dropdown
-- ISE: Internal Standard Element – 0 (No) or 1 (Yes), only one allowed
+- ISE Ref: Internal Standard reference (0 = none, or ITG number of reference element)
 
 Rules:
 - Maximum 32 elements per group
-- Only one ISE allowed (enforced automatically)
+- Typically, the main component (e.g., Fe) has ISE Ref = 0
+- Other elements reference the main component's ITG number
 - ELE is read-only
 - Virtual integrators (57-61) allowed for special calculations
 
 Saved JSON example:
 [
-    {"itg": "1", "ele": "FE", "name": "Fe", "seq": "1", "ise": 1},
-    {"itg": "2", "ele": "C", "name": "C", "seq": "1", "ise": 0},
+    {"itg": "1", "ele": "FE", "name": "Fe", "seq": "1", "ise_ref": 0},
+    {"itg": "2", "ele": "C", "name": "C", "seq": "1", "ise_ref": 1},
+    {"itg": "3", "ele": "SI", "name": "Si", "seq": "1", "ise_ref": 1},
     ...
 ]
 """
@@ -91,6 +93,28 @@ class ChannelPage(QWidget):
         ]
         all_items = defaults + virtual
         return {f"{itg}: {ele}": itg for itg, ele in all_items}
+
+    # =========================================================================
+    # Build ISE Reference Options
+    # =========================================================================
+
+    def _build_ise_options(self) -> list:
+        """Return a list of (display_string, itg_number) for ISE dropdown,
+        including 0 for no reference and all ITGs from MasterElement."""
+        opts = [("0 (none)", 0)]
+        session = get_session()
+        try:
+            elements = session.query(MasterElement).order_by(MasterElement.itg_no).all()
+            for e in elements:
+                if e.ele_name:
+                    opts.append((f"{e.itg_no}: {e.ele_name}", e.itg_no))
+        finally:
+            session.close()
+        # If no elements, provide fallback
+        if len(opts) == 1:
+            fallback = [("1: FE", 1), ("2: C", 2), ("3: SI", 3), ("4: MN", 4)]
+            opts.extend(fallback)
+        return opts
 
     # =========================================================================
     # UI Construction
@@ -186,7 +210,10 @@ class ChannelPage(QWidget):
         ctrl_layout.addWidget(btn_clear)
         ctrl_layout.addStretch()
 
-        info_lbl = QLabel("ISE must be at the top of the list (row 1)")
+        info_lbl = QLabel(
+            "ISE Ref: 0 = No internal standard (constant-time integration). "
+            "Enter ITG number of reference element (e.g., 1 for FE) to ratio against."
+        )
         info_lbl.setStyleSheet(
             "QLabel{"
             "color:#666666;"
@@ -237,7 +264,7 @@ class ChannelPage(QWidget):
         """Create a single centered table with 6 columns and 32 rows."""
         table = QTableWidget()
         table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["AR-No.", "ITG", "ELE", "NAME", "SEQ", "ISE"])
+        table.setHorizontalHeaderLabels(["AR-No.", "ITG", "ELE", "NAME", "SEQ", "ISE Ref"])
 
         # Excel-style table styling
         table.setStyleSheet(
@@ -276,7 +303,7 @@ class ChannelPage(QWidget):
         table.setColumnWidth(2, 50)   # ELE
         table.setColumnWidth(3, 80)   # NAME
         table.setColumnWidth(4, 50)   # SEQ
-        table.setColumnWidth(5, 50)   # ISE
+        table.setColumnWidth(5, 80)   # ISE Ref (wider for ITG display)
 
         table.verticalHeader().setVisible(False)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
@@ -291,6 +318,9 @@ class ChannelPage(QWidget):
 
         # Set 32 rows
         table.setRowCount(MAX_ELEMENTS)
+
+        # Build ISE options once
+        ise_options = self._build_ise_options()
 
         # Populate rows
         for i in range(MAX_ELEMENTS):
@@ -348,7 +378,7 @@ class ChannelPage(QWidget):
                 Qt.ItemFlag.ItemIsEnabled |
                 Qt.ItemFlag.ItemIsEditable
             )
-            name_item.setForeground(QColor("black"))  # Ensure black text
+            name_item.setForeground(QColor("black"))
             table.setItem(i, 3, name_item)
 
             # SEQ dropdown (1,2,3)
@@ -373,9 +403,10 @@ class ChannelPage(QWidget):
             )
             table.setCellWidget(i, 4, seq_combo)
 
-            # ISE dropdown (0 or 1)
+            # ISE Ref dropdown (0 and ITG numbers)
             ise_combo = QComboBox()
-            ise_combo.addItems(["0", "1"])
+            for display, val in ise_options:
+                ise_combo.addItem(display, val)
             ise_combo.setStyleSheet(
                 "QComboBox{"
                 "background:white;"
@@ -393,7 +424,8 @@ class ChannelPage(QWidget):
                 "color:black;"
                 "}"
             )
-            ise_combo.currentIndexChanged.connect(self._on_ise_changed)
+            # No special signal for ISE; we'll just store the value
+            # Remove the old _on_ise_changed signal
             table.setCellWidget(i, 5, ise_combo)
 
         # Calculate table height: 32 rows × 27 + header (27) = 891px
@@ -430,32 +462,6 @@ class ChannelPage(QWidget):
 
         self._update_ch_count()
 
-    def _on_ise_changed(self):
-        """Ensure only one ISE is selected (value = 1) across all rows."""
-        # Find all rows where ISE = 1
-        ise_rows = []
-        for row in range(self.table.rowCount()):
-            ise_combo = self.table.cellWidget(row, 5)
-            if ise_combo and ise_combo.currentText() == "1":
-                ise_rows.append(row)
-
-        if len(ise_rows) > 1:
-            # Keep only the first one, reset others to 0
-            for row in ise_rows[1:]:
-                ise_combo = self.table.cellWidget(row, 5)
-                if ise_combo:
-                    ise_combo.blockSignals(True)
-                    ise_combo.setCurrentIndex(0)  # 0 = "0"
-                    ise_combo.blockSignals(False)
-            QMessageBox.warning(
-                self,
-                "ISE Limit",
-                "Only one Internal Standard Element (ISE) is allowed.\n"
-                "ISE set to row(s) " + ", ".join(str(r+1) for r in ise_rows[:1])
-            )
-
-        self._update_ch_count()
-
     # =========================================================================
     # Data Operations
     # =========================================================================
@@ -474,7 +480,7 @@ class ChannelPage(QWidget):
             ele = ele_item.text().strip() if ele_item else ""
             name = name_item.text().strip() if name_item else ""
             seq = seq_combo.currentText().strip() if seq_combo else ""
-            ise = int(ise_combo.currentText()) if ise_combo else 0
+            ise_ref = ise_combo.currentData() if ise_combo else 0  # integer ITG or 0
 
             if itg:  # only save rows with an ITG selected
                 data.append({
@@ -482,7 +488,7 @@ class ChannelPage(QWidget):
                     "ele": ele,
                     "name": name,
                     "seq": seq,
-                    "ise": ise
+                    "ise_ref": ise_ref,   # store as integer
                 })
         return data
 
@@ -504,7 +510,7 @@ class ChannelPage(QWidget):
                 seq_combo.setCurrentIndex(0)
             ise_combo = self.table.cellWidget(row, 5)
             if ise_combo:
-                ise_combo.setCurrentIndex(0)  # default to 0
+                ise_combo.setCurrentIndex(0)  # default to "0 (none)"
 
         # Fill data
         for idx, entry in enumerate(data):
@@ -516,7 +522,7 @@ class ChannelPage(QWidget):
             ele_val = entry.get("ele", "")
             name_val = entry.get("name", "")
             seq_val = entry.get("seq", "")
-            ise_val = entry.get("ise", 0)
+            ise_ref_val = entry.get("ise_ref", 0)  # integer
 
             # ITG combo: find index by data
             combo = self.table.cellWidget(row, 1)
@@ -546,15 +552,19 @@ class ChannelPage(QWidget):
                 else:
                     seq_combo.setCurrentIndex(0)
 
-            # ISE combo
+            # ISE Ref combo: find by data (integer)
             ise_combo = self.table.cellWidget(row, 5)
             if ise_combo:
-                ise_str = str(ise_val)
-                idx_ise = ise_combo.findText(ise_str)
+                # Find index by data
+                idx_ise = -1
+                for i in range(ise_combo.count()):
+                    if ise_combo.itemData(i) == ise_ref_val:
+                        idx_ise = i
+                        break
                 if idx_ise >= 0:
                     ise_combo.setCurrentIndex(idx_ise)
                 else:
-                    ise_combo.setCurrentIndex(0)
+                    ise_combo.setCurrentIndex(0)  # default to 0
 
         self._update_ch_count()
 
@@ -630,7 +640,7 @@ class ChannelPage(QWidget):
                 DriftCorrectionPage(self.main_window, self.group_id, self.group_name)
             )
         except ImportError:
-            self._show_msg("Next Page", "Page 4 (Channel) is not built yet.")
+            self._show_msg("Next Page", "Page 4 (Drift Correction) is not built yet.")
 
     def _on_pre(self):
         self._save_data()

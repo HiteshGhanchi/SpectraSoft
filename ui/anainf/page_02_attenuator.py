@@ -6,20 +6,21 @@ ATT values range from 0 to 63 and control the gain of each PMT detector.
 
 Columns:
 - Element: Element name (read-only, from master table)
+- ITG: Integrator number (read-only, from master table)
 - W.L.: Wavelength (read-only, from master table)
 - ATT: Attenuator value (0-63, editable)
 
 Rules:
 - ATT values must be between 0 and 63
-- Values are saved per element per group
+- Values are saved per element per group, keyed by ITG No.
 - Each element can have only one ATT value
 
 Saved JSON example:
 {
     "rows": [
-        {"element": "FE", "wavelength": "271.4", "att_value": 45},
-        {"element": "C", "wavelength": "193.0", "att_value": 12},
-        {"element": "SI", "wavelength": "212.4", "att_value": 30},
+        {"itg_no": 1, "element": "FE", "wavelength": "271.4", "att_value": 45},
+        {"itg_no": 2, "element": "C", "wavelength": "193.0", "att_value": 12},
+        {"itg_no": 3, "element": "SI", "wavelength": "212.4", "att_value": 30},
         ...
     ]
 }
@@ -119,8 +120,8 @@ class AttenuatorPage(QWidget):
         # ── Get Elements ──────────────────────────────────────────────────
         session = get_session()
         try:
-            elements = session.query(MasterElement).order_by(
-                MasterElement.display_order).all()
+            # Order by itg_no (primary key)
+            elements = session.query(MasterElement).order_by(MasterElement.itg_no).all()
             element_count = len(elements)
         finally:
             session.close()
@@ -218,10 +219,10 @@ class AttenuatorPage(QWidget):
     # =========================================================================
 
     def _create_table(self, row_count: int) -> QTableWidget:
-        """Create a single Excel-style table with 3 columns."""
+        """Create a single Excel-style table with 4 columns."""
         table = QTableWidget()
-        table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["Element", "W.L.", "ATT"])
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels(["Element", "ITG", "W.L.", "ATT"])
 
         # Excel-style table styling
         table.setStyleSheet(
@@ -259,8 +260,9 @@ class AttenuatorPage(QWidget):
 
         # Column widths
         table.setColumnWidth(0, 70)   # Element
-        table.setColumnWidth(1, 80)   # Wavelength
-        table.setColumnWidth(2, 70)   # ATT
+        table.setColumnWidth(1, 50)   # ITG
+        table.setColumnWidth(2, 80)   # Wavelength
+        table.setColumnWidth(3, 70)   # ATT
 
         # Turn off scrollbars to avoid layout shifting
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -279,8 +281,8 @@ class AttenuatorPage(QWidget):
         # Set row count
         table.setRowCount(row_count)
 
-        # Calculate exact table dimensions
-        table.setFixedWidth(222)  # 70 + 80 + 70 + borders
+        # Calculate exact table dimensions: 70 + 50 + 80 + 70 + borders
+        table.setFixedWidth(274)  # + 4px for borders
 
         # Height: rows × 27 + header (27) + borders
         table_height = (row_count * 27) + 27 + 3
@@ -300,17 +302,23 @@ class AttenuatorPage(QWidget):
             g = session.get(AnalyticalGroup, self.group_id)
             if g and g.page_02_attenuator and g.page_02_attenuator.get("rows"):
                 for r in g.page_02_attenuator["rows"]:
-                    saved_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
+                    # Use itg_no as the key if present, else fallback to (element, wavelength)
+                    itg = r.get("itg_no")
+                    if itg is not None:
+                        saved_values[itg] = r.get("att_value", 0)
+                    else:
+                        # old format: fallback to (element, wavelength)
+                        saved_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
         finally:
             session.close()
 
         for row, me in enumerate(elements):
             if me is None:
                 # Empty row (padding)
-                for col in range(3):
+                for col in range(4):
                     item = QTableWidgetItem("")
                     item.setFlags(Qt.ItemFlag.NoItemFlags)
-                    if col < 2:
+                    if col < 3:
                         item.setBackground(QColor("#e8e8e8"))
                     else:
                         item.setBackground(QColor("white"))
@@ -320,9 +328,11 @@ class AttenuatorPage(QWidget):
             # Handle both model objects and dicts
             if hasattr(me, 'ele_name'):
                 ele = me.ele_name or ""
+                itg = me.itg_no
                 wl = me.wavelength or ""
             else:
                 ele = me.get("ele_name", "")
+                itg = me.get("itg_no", 0)
                 wl = me.get("wavelength", "")
 
             # Element (read-only, grayish)
@@ -333,20 +343,34 @@ class AttenuatorPage(QWidget):
             ele_item.setForeground(QColor("black"))
             table.setItem(row, 0, ele_item)
 
+            # ITG (read-only, grayish)
+            itg_item = QTableWidgetItem(str(itg))
+            itg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            itg_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            itg_item.setBackground(QColor("#e8e8e8"))
+            itg_item.setForeground(QColor("black"))
+            table.setItem(row, 1, itg_item)
+
             # Wavelength (read-only, grayish)
             wl_item = QTableWidgetItem(wl)
             wl_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             wl_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             wl_item.setBackground(QColor("#e8e8e8"))
             wl_item.setForeground(QColor("black"))
-            table.setItem(row, 1, wl_item)
+            table.setItem(row, 2, wl_item)
 
             # ATT value (editable, white)
-            att = saved_values.get((ele, wl), 0)
+            # Try to get saved value using itg_no first, then fallback
+            att = 0
+            if itg in saved_values:
+                att = saved_values[itg]
+            else:
+                # fallback to old key format
+                att = saved_values.get((ele, wl), 0)
             att_item = QTableWidgetItem(str(att))
             att_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             att_item.setForeground(QColor("black"))
-            table.setItem(row, 2, att_item)
+            table.setItem(row, 3, att_item)
 
     # =========================================================================
     # Data Operations
@@ -358,18 +382,25 @@ class AttenuatorPage(QWidget):
         for table in [self._left_table, self._right_table]:
             for row in range(table.rowCount()):
                 ele_item = table.item(row, 0)
-                wl_item = table.item(row, 1)
-                att_item = table.item(row, 2)
+                itg_item = table.item(row, 1)
+                wl_item = table.item(row, 2)
+                att_item = table.item(row, 3)
 
-                if ele_item and wl_item and att_item:
+                if ele_item and itg_item and wl_item and att_item:
                     ele = ele_item.text().strip()
+                    itg_str = itg_item.text().strip()
                     wl = wl_item.text().strip()
-                    if ele:  # only save non-empty
+                    if ele and itg_str:  # only save non-empty
+                        try:
+                            itg_no = int(itg_str)
+                        except ValueError:
+                            continue
                         try:
                             att_val = int(att_item.text()) if att_item.text() else 0
                         except ValueError:
                             att_val = 0
                         rows.append({
+                            "itg_no": itg_no,
                             "element": ele,
                             "wavelength": wl,
                             "att_value": att_val,
@@ -392,8 +423,8 @@ class AttenuatorPage(QWidget):
         """Reload both tables with current data."""
         session = get_session()
         try:
-            elements = session.query(MasterElement).order_by(
-                MasterElement.display_order).all()
+            # Order by itg_no (primary key)
+            elements = session.query(MasterElement).order_by(MasterElement.itg_no).all()
 
             if not elements:
                 # No elements – show empty tables
@@ -414,12 +445,16 @@ class AttenuatorPage(QWidget):
             if len(right_elements) < max_rows:
                 right_elements = right_elements + [None] * (max_rows - len(right_elements))
 
-            # Save current ATT values
+            # Save current ATT values (from DB)
             saved_values = {}
             g = session.get(AnalyticalGroup, self.group_id)
             if g and g.page_02_attenuator and g.page_02_attenuator.get("rows"):
                 for r in g.page_02_attenuator["rows"]:
-                    saved_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
+                    itg = r.get("itg_no")
+                    if itg is not None:
+                        saved_values[itg] = r.get("att_value", 0)
+                    else:
+                        saved_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
 
             # Update table heights based on new row count
             self._left_table.setRowCount(max_rows)
@@ -441,10 +476,10 @@ class AttenuatorPage(QWidget):
         """Repopulate a table with saved data."""
         for row, me in enumerate(elements):
             if me is None:
-                for col in range(3):
+                for col in range(4):
                     item = QTableWidgetItem("")
                     item.setFlags(Qt.ItemFlag.NoItemFlags)
-                    if col < 2:
+                    if col < 3:
                         item.setBackground(QColor("#e8e8e8"))
                     else:
                         item.setBackground(QColor("white"))
@@ -453,9 +488,11 @@ class AttenuatorPage(QWidget):
 
             if hasattr(me, 'ele_name'):
                 ele = me.ele_name or ""
+                itg = me.itg_no
                 wl = me.wavelength or ""
             else:
                 ele = me.get("ele_name", "")
+                itg = me.get("itg_no", 0)
                 wl = me.get("wavelength", "")
 
             # Element (read-only, grayish)
@@ -466,20 +503,28 @@ class AttenuatorPage(QWidget):
             ele_item.setForeground(QColor("black"))
             table.setItem(row, 0, ele_item)
 
+            # ITG (read-only, grayish)
+            itg_item = QTableWidgetItem(str(itg))
+            itg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            itg_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            itg_item.setBackground(QColor("#e8e8e8"))
+            itg_item.setForeground(QColor("black"))
+            table.setItem(row, 1, itg_item)
+
             # Wavelength (read-only, grayish)
             wl_item = QTableWidgetItem(wl)
             wl_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             wl_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             wl_item.setBackground(QColor("#e8e8e8"))
             wl_item.setForeground(QColor("black"))
-            table.setItem(row, 1, wl_item)
+            table.setItem(row, 2, wl_item)
 
             # ATT value (editable, white)
-            att = saved_values.get((ele, wl), 0)
+            att = saved_values.get(itg, 0) if itg in saved_values else saved_values.get((ele, wl), 0)
             att_item = QTableWidgetItem(str(att))
             att_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             att_item.setForeground(QColor("black"))
-            table.setItem(row, 2, att_item)
+            table.setItem(row, 3, att_item)
 
     # =========================================================================
     # Message Box Helper

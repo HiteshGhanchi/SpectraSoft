@@ -64,9 +64,7 @@ class MasterElement(Base):
 
     itg_no = Column(Integer, primary_key=True)           # primary key, user‑defined
     ele_name = Column(String(20), nullable=False)        # e.g., "FE"
-    chemical_name = Column(String(20), default="")       # e.g., "Iron"
     wavelength = Column(String(20), default="")          # e.g., "271.4"
-    display_order = Column(Integer, default=0)           # for sorting
 
     def __repr__(self):
         return f"<MasterElement(itg_no={self.itg_no}, ele_name='{self.ele_name}')>"
