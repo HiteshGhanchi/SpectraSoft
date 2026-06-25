@@ -8,7 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
-
+from PyQt6.QtCore import QTimer
+from core.uart_manager import UARTManager
 
 class MainWindow(QMainWindow):
 
@@ -257,3 +258,30 @@ class MainWindow(QMainWindow):
         
         run_page = AnalysisRunPage(self, group_id=gid, group_name=gname)
         self.set_right_widget(run_page)
+
+    def _build_status_bar(self):
+        sb = QStatusBar()
+        sb.setStyleSheet("background:#d4d0c8; color:#000000;")
+        self.setStatusBar(sb)
+        
+        # Connection status label
+        self.conn_status_label = QLabel("🔴 Disconnected")
+        self.conn_status_label.setStyleSheet("padding: 2px 8px; font: 9pt Arial;")
+        sb.addWidget(self.conn_status_label)
+        
+        # Try to connect after a short delay
+        QTimer.singleShot(500, self._check_connection)
+
+    def _check_connection(self):
+        """Check hardware connection and update status."""
+        uart = UARTManager()
+        if uart.connect():
+            self.conn_status_label.setText("🟢 Connected")
+            self.conn_status_label.setStyleSheet("color: green; padding: 2px 8px; font: 9pt Arial;")
+            # Store the connected UART instance for later use?
+            # We can store it as an attribute for other methods.
+            self._uart = uart
+        else:
+            self.conn_status_label.setText("🔴 Disconnected")
+            self.conn_status_label.setStyleSheet("color: red; padding: 2px 8px; font: 9pt Arial;")
+            self._uart = None

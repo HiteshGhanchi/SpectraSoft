@@ -1,71 +1,75 @@
 """
-SpectraSoft — Analysis Worker
-================================
-Runs spectrometer analysis in a background QThread to keep the UI responsive.
+SpectraSoft — Analysis Worker (Job 5 Only)
+============================================
+Runs ONLY Job 5: INT.1 (Raw Intensity) in a background thread.
 
-Signals:
-    progress(str, int) – progress step and percentage (0-100)
-    result(dict) – analysis results (raw intensities + processed data)
-    error(str) – error message
-    finished() – emitted when the worker finishes (success or failure)
+This is the "sanity check" job used to verify:
+- Hardware connection is working
+- Spark is stable
+- Sensors are receiving light
+- ATT values are in correct range (0.5-0.6)
 
-Usage:
-    worker = AnalysisWorker(group_id, job_type, params)
-    worker.progress.connect(update_progress_bar)
-    worker.result.connect(display_results)
-    worker.error.connect(show_error)
-    worker.finished.connect(enable_ui)
-    worker.start()
-    # To abort:
-    worker.stop()
+It does NOT apply any corrections (drift, working curve, matrix, master, purity).
+It DOES apply:
+  - Internal Standard ratio (if configured on Page 3)
+  - Normalization to 0.0-1.0 scale or percentage
+
+Singleton UART Manager:
+  - UARTManager is a singleton (via __new__). The first call to UARTManager()
+    creates the connection; subsequent calls reuse the same instance.
+  - This prevents multiple attempts to open the same COM port.
 """
 
 from PyQt6.QtCore import QThread, pyqtSignal
-
+from core.uart_manager import UARTManager
+from core.sequence_engine import SequenceEngine
+from core.attenuator_programmer import AttenuatorProgrammer
 from core.database import get_session
 from core.models import AnalyticalGroup
-from core.hardware import hw, HardwareError
-import traceback
 
 
 class AnalysisWorker(QThread):
-    """Background worker for spectrometer analysis."""
+    """
+    Background worker for Job 5: INT.1 (Raw Intensity).
 
-    progress = pyqtSignal(str, int)   # step_name, percent (0-100)
-    result = pyqtSignal(dict)         # final results
-    error = pyqtSignal(str)           # error message
-    finished = pyqtSignal()           # always emitted at the end
+    Signals:
+        progress(str, int): Status message and progress percentage (0-100).
+        result(dict): The raw intensity results.
+        error(str): Error message if something fails.
+        finished(): Emitted when the worker finishes.
+    """
 
-    def __init__(self, group_id: int, job_type: str, params: dict = None):
+    progress = pyqtSignal(str, int)
+    result = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, group_id: int, params: dict = None):
         """
         Args:
-            group_id: Analytical Group ID
-            job_type: 'X', 'Y', '2', '3', '4', '5', '6', '7', '8'
-            params: dict with job-specific parameters:
-                - For Job X/Y: {"sample_name": str}
-                - For Job 2: {"k_sample": str}
-                - For Job 3: {"h_sample": str, "l_sample": str}
-                - For Job 4: {"master_sample": str}
-                - For Job 8: {"h_sample": str, "l_sample": str, "k_sample": str}
-                - Others: {}
+            group_id: Analytical Group ID.
+            params: Job parameters (e.g., sample_name).
         """
         super().__init__()
         self.group_id = group_id
-        self.job_type = job_type
         self.params = params or {}
         self._abort = False
+        self._group_data = None
 
     def stop(self):
         """Request to abort the running analysis."""
         self._abort = True
 
     def run(self):
-        """Main thread entry point."""
+        """
+        Main thread entry point.
+        Executes Job 5: INT.1 (Raw Intensity).
+        """
         try:
-            # 1. Load group data
-            self.progress.emit("Loading group data…", 5)
-            group_data = self._load_group_data()
-            if group_data is None:
+            # ── Step 1: Load group data from database ──────────────────
+            self.progress.emit("Loading group data...", 5)
+            self._group_data = self._load_group_data()
+            if self._group_data is None:
                 self.error.emit(f"Group {self.group_id} not found.")
                 return
 
@@ -73,306 +77,157 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # 2. Prepare progress callback for hardware
-            def progress_cb(step: str, percent: int):
-                if self._abort:
-                    raise HardwareError("Aborted")
-                self.progress.emit(step, percent)
+            # ── Step 2: Get shared UART connection (singleton) ────────
+            # UARTManager is a singleton; calling UARTManager() returns
+            # the same instance across the whole application.
+            self.progress.emit("Connecting to hardware...", 10)
+            uart = UARTManager()   # Singleton – reuses connection if already open
 
-            # 3. Run the appropriate job
-            self.progress.emit(f"Running Job {self.job_type}…", 10)
-            if self.job_type == 'X':
-                results = self._run_content_analysis(group_data, progress_cb)
-            elif self.job_type == 'Y':
-                results = self._run_three_time_analysis(group_data, progress_cb)
-            elif self.job_type == '2':
-                results = self._run_1_point_recal(group_data, progress_cb)
-            elif self.job_type == '3':
-                results = self._run_2_point_recal(group_data, progress_cb)
-            elif self.job_type == '4':
-                results = self._run_master_curve_recal(group_data, progress_cb)
-            elif self.job_type == '5':
-                results = self._run_int1(group_data, progress_cb)
-            elif self.job_type == '6':
-                results = self._run_int2(group_data, progress_cb)
-            elif self.job_type == '7':
-                results = self._run_int2_wc(group_data, progress_cb)
-            elif self.job_type == '8':
-                results = self._run_int2_target(group_data, progress_cb)
-            else:
-                self.error.emit(f"Unknown job type: {self.job_type}")
+            # Check if connection was successful
+            if not uart.is_connected:
+                self.error.emit(
+                    "Failed to connect to hardware.\n"
+                    "Check that the CH340 adapter is plugged in and the MCU is powered."
+                )
                 return
 
             if self._abort:
                 self.error.emit("Aborted by user.")
                 return
 
-            # 4. Emit results
-            self.progress.emit("Analysis complete.", 100)
-            self.result.emit(results)
+            # ── Step 3: Program attenuator (ATT) values ───────────────
+            # This is ALWAYS done before any burn. The ATT values are
+            # stored on Page 2 and set the gain for each PMT channel.
+            self.progress.emit("Programming attenuators...", 15)
+            att_rows = self._group_data.get("page_02_attenuator", {}).get("rows", [])
+            programmer = AttenuatorProgrammer(uart)
+            prog_count = programmer.program_all(att_rows)
+            print(f"  Programmed {prog_count} attenuators")
 
-        except HardwareError as e:
-            if str(e) == "Aborted":
-                self.error.emit("Analysis aborted by user.")
-            else:
-                self.error.emit(f"Hardware error: {str(e)}")
+            if self._abort:
+                self.error.emit("Aborted by user.")
+                return
+
+            # ── Step 4: Execute the burn sequence ──────────────────────
+            # This runs the full hardware sequence:
+            #   Reset → Purge → Prespark → Integration → Read ADC → Clean
+            self.progress.emit("Running burn sequence...", 20)
+            sequence = SequenceEngine(uart)
+            raw_adc = sequence.execute_full_sequence(
+                page1_data=self._group_data.get("page_01_source", {}),
+                page3_data=self._group_data.get("page_03_channel", []),
+                progress_cb=lambda s, p: self.progress.emit(s, p)
+            )
+
+            if self._abort:
+                self.error.emit("Aborted by user.")
+                return
+
+            # ── Step 5: Apply Internal Standard (ISE) ratio ────────────
+            # If ISE is configured on Page 3, the software calculates
+            # the relative intensity: (Element / ISE) × 100
+            # If no ISE is configured, it shows normalized ADC (0.0-1.0).
+            self.progress.emit("Processing intensities...", 85)
+            results = self._apply_ise_ratio(raw_adc)
+
+            # ── Step 6: Emit results ─────────────────────────────────────
+            self.progress.emit("Done!", 100)
+            self.result.emit({
+                "type": "INT.1",
+                "sample": self.params.get("sample_name", "Unknown"),
+                "raw_adc": raw_adc,          # Raw ADC counts (0-4095)
+                "intensities": results,       # Normalized or relative values
+                "overflows": self._check_overflows(results),
+            })
+
         except Exception as e:
-            self.error.emit(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
+            self.error.emit(str(e))
         finally:
             self.finished.emit()
 
-    # ------------------------------------------------------------------
-    # Data loading
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Helper Methods
+    # =========================================================================
 
     def _load_group_data(self) -> dict:
-        """Load all page data for the group."""
+        """Load all page data for the group from the database."""
         session = get_session()
         try:
             group = session.get(AnalyticalGroup, self.group_id)
             if not group:
                 return None
             return {
-                "page_01_condition": group.page_01_condition,
+                "page_01_source": group.page_01_source,        # Corrected name
                 "page_02_attenuator": group.page_02_attenuator,
-                "page_03_element": group.page_03_element,
-                "page_04_drift": group.page_04_drift,
-                "page_05_wc": group.page_05_wc,
-                "page_06_matrix": group.page_06_matrix,
-                "page_07_master": group.page_07_master,
-                "page_08_display": group.page_08_display,
-                "page_09_purity": group.page_09_purity,
+                "page_03_channel": group.page_03_channel,
+                # Other pages are not needed for Job 5 (no corrections).
             }
         finally:
             session.close()
 
-    # ------------------------------------------------------------------
-    # Job implementations
-    # ------------------------------------------------------------------
-
-    def _run_content_analysis(self, group_data: dict, progress_cb):
-        """Job X: Content Analysis."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "content",
-            "sample": self.params.get("sample_name", "Unknown"),
-            "raw_intensities": raw,
-            "concentrations": {},  # Placeholder for future correction
-        }
-
-    def _run_three_time_analysis(self, group_data: dict, progress_cb):
-        """Job Y: 3-Time Analysis."""
-        results = []
-        for i in range(3):
-            if self._abort:
-                raise HardwareError("Aborted")
-            progress_cb(f"Burn {i+1}/3", 10 + i * 25)
-            raw = hw.run_analysis(group_data, progress_cb)
-            results.append(raw)
-        avg = {}
-        for key in results[0].keys():
-            vals = [r.get(key, 0) for r in results]
-            avg[key] = sum(vals) / len(vals)
-        return {
-            "type": "3-time",
-            "sample": self.params.get("sample_name", "Unknown"),
-            "burns": results,
-            "average": avg,
-        }
-
-    def _run_1_point_recal(self, group_data: dict, progress_cb):
-        """Job 2: 1-Point Recalibration."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "1-point recal",
-            "k_sample": self.params.get("k_sample", ""),
-            "raw_intensities": raw,
-            "k": 1.0,  # Placeholder
-        }
-
-    def _run_2_point_recal(self, group_data: dict, progress_cb):
-        """Job 3: 2-Point Recalibration."""
-        progress_cb("Measuring H standard…", 20)
-        raw_h = hw.run_analysis(group_data, progress_cb)
-        if self._abort:
-            raise HardwareError("Aborted")
-        progress_cb("Measuring L standard…", 60)
-        raw_l = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "2-point recal",
-            "h_sample": self.params.get("h_sample", ""),
-            "l_sample": self.params.get("l_sample", ""),
-            "raw_h": raw_h,
-            "raw_l": raw_l,
-            "alpha": 1.0,  # Placeholder
-            "beta": 0.0,   # Placeholder
-        }
-
-    def _run_master_curve_recal(self, group_data: dict, progress_cb):
-        """Job 4: Master Curve Recalibration."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "master curve recal",
-            "master_sample": self.params.get("master_sample", ""),
-            "raw_intensities": raw,
-            "ac": 0.0,  # Placeholder
-            "mc": 1.0,  # Placeholder
-        }
-
-    def _run_int1(self, group_data: dict, progress_cb):
-        """Job 5: INT.1 (Raw Intensity)."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "INT.1",
-            "raw_intensities": raw,
-        }
-
-    def _run_int2(self, group_data: dict, progress_cb):
-        """Job 6: INT.2 (Drift Corrected)."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "INT.2",
-            "raw_intensities": raw,
-        }
-
-    def _run_int2_wc(self, group_data: dict, progress_cb):
-        """Job 7: INT.2 for Working Curve."""
-        raw = hw.run_analysis(group_data, progress_cb)
-        return {
-            "type": "INT.2 for WC",
-            "raw_intensities": raw,
-        }
-
-    # =========================================================================
-    # JOB 8: INT.2 for Target
-    # =========================================================================
-
-    def _run_int2_target(self, group_data: dict, progress_cb):
+    def _apply_ise_ratio(self, raw_adc: dict) -> dict:
         """
-        Job 8: INT.2 for Target.
+        Apply Internal Standard (ISE) ratio if configured on Page 3.
 
-        Measures H, L, and K standards and saves the intensities as targets
-        on Page 4 of the Analytical Group.
-
-        Workflow:
-            1. Run burn on H standard → Get H intensity
-            2. Run burn on L standard → Get L intensity
-            3. Run burn on K standard → Get K intensity
-            4. Save all intensities to page_04_drift in the database
+        Two modes:
+          1. ISE = 0 (no reference): Normalized ADC (value / 4095)
+          2. ISE > 0 (reference ITG): Relative Intensity = (Element / ISE) × 100
 
         Args:
-            group_data: Dictionary containing all page data
-            progress_cb: Callback for progress updates
+            raw_adc: Dict of {element_name: raw_adc_value}
 
         Returns:
-            dict: Results with sample names and measured intensities
-
-        Raises:
-            HardwareError: If aborted or hardware fails
+            Dict of {element_name: processed_value}
         """
-        h_sample = self.params.get("h_sample", "A")
-        l_sample = self.params.get("l_sample", "B")
-        k_sample = self.params.get("k_sample", "C")
+        page3_data = self._group_data.get("page_03_channel", [])
+
+        # Build mapping: element_name -> ise_ref (ITG number)
+        ise_map = {}
+        itg_to_elem = {}
+        for elem in page3_data:
+            name = elem.get("ele", "")
+            itg = int(elem.get("itg", 0))
+            ise_ref = elem.get("ise_ref", 0)
+            ise_map[name] = ise_ref
+            itg_to_elem[itg] = name
 
         results = {}
+        for name, adc_value in raw_adc.items():
+            ise_ref = ise_map.get(name, 0)
 
-        # ── Step 1: Measure High Standard (H) ──────────────────────────────
-        progress_cb(f"Measuring H standard ({h_sample})…", 20)
-        raw_h = hw.run_analysis(group_data, progress_cb)
-        if self._abort:
-            raise HardwareError("Aborted")
-        results["h_intensities"] = raw_h
-        results["h_sample"] = h_sample
+            if ise_ref > 0:
+                # Mode 2: Relative Intensity (% of ISE)
+                # Find the reference element name from its ITG number.
+                ref_name = itg_to_elem.get(ise_ref)
+                if ref_name and ref_name in raw_adc:
+                    ref_adc = raw_adc[ref_name]
+                    if ref_adc > 0:
+                        # Relative Intensity = (Element / ISE) × 100
+                        results[name] = (adc_value / ref_adc) * 100
+                    else:
+                        results[name] = 0.0
+                else:
+                    # Fallback: normalized ADC if reference not found.
+                    results[name] = adc_value / 4095
+            else:
+                # Mode 1: Normalized ADC (0.0-1.0 scale)
+                # 4095 is the maximum 12-bit ADC value.
+                results[name] = adc_value / 4095
 
-        # ── Step 2: Measure Low Standard (L) ──────────────────────────────
-        progress_cb(f"Measuring L standard ({l_sample})…", 50)
-        raw_l = hw.run_analysis(group_data, progress_cb)
-        if self._abort:
-            raise HardwareError("Aborted")
-        results["l_intensities"] = raw_l
-        results["l_sample"] = l_sample
-
-        # ── Step 3: Measure 1-Point Standard (K) ──────────────────────────
-        progress_cb(f"Measuring K standard ({k_sample})…", 80)
-        raw_k = hw.run_analysis(group_data, progress_cb)
-        if self._abort:
-            raise HardwareError("Aborted")
-        results["k_intensities"] = raw_k
-        results["k_sample"] = k_sample
-
-        # ── Step 4: Save targets to Page 4 ──────────────────────────────
-        progress_cb("Saving target values…", 90)
-        self._save_targets_to_page4(h_sample, l_sample, k_sample, raw_h, raw_l, raw_k)
-
-        results["type"] = "INT.2 for Target"
-        results["saved"] = True
-
-        progress_cb("Target values saved.", 100)
         return results
 
-    def _save_targets_to_page4(self, h_sample: str, l_sample: str, k_sample: str,
-                               raw_h: dict, raw_l: dict, raw_k: dict):
+    def _check_overflows(self, intensities: dict) -> list:
         """
-        Save measured intensities as targets on Page 4.
+        Check for overflow values (>0.8) in the intensity results.
 
-        The targets are saved per element. Since the hardware measures
-        ALL elements simultaneously, we store the intensity for each element
-        separately.
+        In the Shimadzu system, 0.8 is the functional overflow limit.
+        Values above 0.8 indicate the PMT signal is saturating.
 
-        For each element, we store:
-            - H_target: intensity from High standard
-            - L_target: intensity from Low standard
-            - K_target: intensity from 1-point standard
-
-        Args:
-            h_sample: Name of the High standard
-            l_sample: Name of the Low standard
-            k_sample: Name of the 1-point standard
-            raw_h: Raw intensities from High standard
-            raw_l: Raw intensities from Low standard
-            raw_k: Raw intensities from 1-point standard
+        Returns:
+            List of element names that are overflowing.
         """
-        session = get_session()
-        try:
-            group = session.get(AnalyticalGroup, self.group_id)
-            if not group:
-                raise ValueError(f"Group {self.group_id} not found.")
-
-            # Get current Page 4 data (or create if empty)
-            drift_data = group.page_04_drift or {}
-
-            # ── Get the first element's intensity as the target ──────────
-            # For simplicity, we use the first element's intensity.
-            # In a real implementation, we might store per-element targets.
-            # But the old system stores a single target value per element
-            # (the one used as the "master" for drift correction).
-            #
-            # For simplicity, we use the first key in the dictionary.
-            # A more robust implementation would store per-element targets.
-            h_target = list(raw_h.values())[0] if raw_h else 0.0
-            l_target = list(raw_l.values())[0] if raw_l else 0.0
-            k_target = list(raw_k.values())[0] if raw_k else 0.0
-
-            # ── Update Page 4 with targets ──────────────────────────────
-            drift_data["h_sample"] = h_sample
-            drift_data["l_sample"] = l_sample
-            drift_data["k_sample"] = k_sample
-            drift_data["h_target"] = h_target
-            drift_data["l_target"] = l_target
-            drift_data["k_target"] = k_target
-
-            # Keep existing alpha, beta, k if they exist
-            # (They should be 1.0, 0.0, 1.0 by default)
-            drift_data.setdefault("alpha", 1.0)
-            drift_data.setdefault("beta", 0.0)
-            drift_data.setdefault("k_coeff", 1.0)
-
-            # ── Save back to database ─────────────────────────────────────
-            group.page_04_drift = drift_data
-            session.commit()
-
-        except Exception as e:
-            session.rollback()
-            raise e
-        finally:
-            session.close()
+        overflows = []
+        for name, value in intensities.items():
+            if value > 0.8:
+                overflows.append(name)
+        return overflows

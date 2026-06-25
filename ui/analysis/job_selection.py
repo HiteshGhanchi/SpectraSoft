@@ -1,8 +1,6 @@
 """
 SpectraSoft — Job Selection Menu
-
-Displays F1-F10 menu for selecting analysis jobs.
-Clicking a job opens the Analysis Run page with that job selected.
+Only Job 5 (INT.1 Raw Intensity) is currently available.
 """
 
 from PyQt6.QtWidgets import (
@@ -10,11 +8,10 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QFrame, QMessageBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 
 
 class JobSelectionPage(QWidget):
-    """F1-F10 job selection menu."""
+    """F1-F10 job selection menu (only Job 5 enabled)."""
 
     def __init__(self, main_window):
         super().__init__()
@@ -26,7 +23,7 @@ class JobSelectionPage(QWidget):
         self.setPalette(p)
 
         self._build_ui()
-        self._update_hv_button()  # Sync HV status on load
+        self._update_hv_button()
 
     # =========================================================================
     # UI Construction
@@ -76,31 +73,17 @@ class JobSelectionPage(QWidget):
         ol = QVBoxLayout(outer)
         ol.setContentsMargins(20, 20, 20, 20)
 
-        # ── Info Text ────────────────────────────────────────────────────
-        info = QLabel("Select a job to run. Press the corresponding key or click the button.")
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info.setStyleSheet(
-            "QLabel{"
-            "background:#d4d0c8;"
-            "color:#666666;"
-            "font:9pt Arial;"
-            "border:none;"
-            "padding:4px 0px;"
-            "}"
-        )
-        ol.addWidget(info)
-
         # ── Job Buttons (F1-F10) ──────────────────────────────────────
         jobs = [
-            ("2", "1-Point Recalibration", "Quick daily drift check"),
-            ("3", "2-Point Recalibration", "Full daily drift correction"),
-            ("4", "Master Curve Recalibration", "Fine-tune using master standard"),
-            ("5", "INT.1 (Raw Intensity)", "Pre-correction intensity"),
-            ("6", "INT.2 (Drift Corrected)", "Post-correction intensity"),
-            ("7", "INT.2 for Working Curve", "Measure standards for regression"),
-            ("8", "INT.2 for Target", "Set target values (first-time setup)"),
-            ("X", "CONT (Content Analysis)", "Routine sample analysis"),
-            ("Y", "Special 3-Time Analysis", "Multi-burn with variance check"),
+            ("2", "1-Point Recalibration", False),
+            ("3", "2-Point Recalibration", False),
+            ("4", "Master Curve Recalibration", False),
+            ("5", "INT.1 (Raw Intensity)", True),   # Only this is enabled
+            ("6", "INT.2 (Drift Corrected)", False),
+            ("7", "INT.2 for Working Curve", False),
+            ("8", "INT.2 for Target", False),
+            ("X", "CONT (Content Analysis)", False),
+            ("Y", "Special 3-Time Analysis", False),
         ]
 
         grid = QGridLayout()
@@ -121,11 +104,28 @@ class JobSelectionPage(QWidget):
             "}"
         )
 
-        for row, (key, name, desc) in enumerate(jobs):
+        btn_disabled_style = (
+            "QPushButton{"
+            "background:#e0e0e0;"
+            "color:#888888;"
+            "border:2px outset #aaaaaa;"
+            "font:9pt Arial;"
+            "padding:8px 12px;"
+            "min-width:80px;"
+            "text-align:left;"
+            "}"
+        )
+
+        for row, (key, name, enabled) in enumerate(jobs):
             btn = QPushButton(f"{key}: {name}")
-            btn.setStyleSheet(btn_style)
-            btn.setToolTip(desc)
-            btn.clicked.connect(lambda checked, k=key: self._on_job_selected(k))
+            if enabled:
+                btn.setStyleSheet(btn_style)
+                btn.clicked.connect(lambda checked, k=key: self._on_job_selected(k))
+            else:
+                btn.setStyleSheet(btn_disabled_style)
+                btn.setEnabled(False)
+                # Optionally add a tooltip explaining why
+                btn.setToolTip("Only Job 5 is available in this version.")
             grid.addWidget(btn, row // 3, row % 3)
 
         # ── Add Stretch to center grid ──────────────────────────────────
@@ -173,12 +173,10 @@ class JobSelectionPage(QWidget):
     # =========================================================================
 
     def _toggle_hv(self):
-        """Toggle HV on/off."""
         self.main_window.toggle_hv()
         self._update_hv_button()
 
     def _update_hv_button(self):
-        """Update HV button appearance based on current status."""
         if self.main_window.get_hv_status():
             self.hv_btn.setText("HV: ON")
             self.hv_btn.setStyleSheet(
@@ -208,7 +206,15 @@ class JobSelectionPage(QWidget):
 
     def _on_job_selected(self, job_type: str):
         """Open analysis run page with selected job type."""
-        # Get the current group from left panel
+        # Only Job 5 is enabled, but keep check
+        if job_type != '5':
+            QMessageBox.information(
+                self,
+                "Not Available",
+                "Only Job 5 (INT.1 Raw Intensity) is implemented in this version."
+            )
+            return
+
         gid, gname = self._get_current_group()
         if gid is None:
             QMessageBox.warning(
@@ -218,13 +224,12 @@ class JobSelectionPage(QWidget):
             )
             return
 
-        from ui.analysis.analysis_run import AnalysisRunPage
+        from ui.analysis.analysis_run_job5 import Job5RunPage
         self.main_window.set_right_widget(
-            AnalysisRunPage(self.main_window, gid, gname, job_type)
+            Job5RunPage(self.main_window, gid, gname, job_type)
         )
 
     def _get_current_group(self):
-        """Get selected group from left panel."""
         if hasattr(self.main_window, '_group_panel'):
             if hasattr(self.main_window._group_panel, '_selected'):
                 return self.main_window._group_panel._selected()
