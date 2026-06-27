@@ -1,9 +1,15 @@
 """
-SpectraSoft — Job 5: INT.1 (Raw Intensity)
+SpectraSoft — Job 5: INT.1 (Raw Intensity) - Simulation Mode
 
-This page is dedicated to Job 5 only.
-It shows raw intensity (normalized or relative) with multi-burn support.
-Columns: Element, AVE, N=1, N=2, ..., R, S.D., C.V.
+This page simulates reading data from an Excel file.
+User enters an ST number, and the software reads the corresponding column
+from an Excel file (simulation_data.xlsx) to populate the results table.
+
+Element names are fetched from the first column of the Excel file.
+Columns: Element, AVE, N=1, N=2, ...
+No R, S.D., C.V. columns.
+
+Export as Excel (.xlsx) using openpyxl.
 """
 
 from PyQt6.QtWidgets import (
@@ -16,16 +22,22 @@ from PyQt6.QtCore import Qt, QTimer, QDate
 from PyQt6.QtGui import QColor, QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
-from core.analysis_worker import AnalysisWorker
-from core.database import get_session
-from core.models import AnalyticalGroup
-
-import csv
+import os
 import math
+
+# Use openpyxl for both reading and writing
+try:
+    from openpyxl import load_workbook, Workbook
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+# Default simulation Excel file
+SIMULATION_EXCEL = "simulation_data.xlsx"
 
 
 class Job5RunPage(QWidget):
-    """Job 5: Raw Intensity analysis page."""
+    """Job 5: Raw Intensity simulation page reading from Excel."""
 
     def __init__(self, main_window, group_id: int, group_name: str, job_type: str):
         super().__init__()
@@ -34,14 +46,13 @@ class Job5RunPage(QWidget):
         self.group_name = group_name
         self.job_type = job_type   # Should be '5'
 
-        self.worker = None
         self.results = []          # list of dict: each burn result {element: intensity}
-        self.element_names = []
+        self.element_names = []    # Will be populated from Excel file
         self.is_running = False
 
         # Counters for status footer
-        self.an_count = 0          # Analysis number since last waste discharge
-        self.tan_count = 0         # Total number of emission times
+        self.an_count = 0
+        self.tan_count = 0
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -50,7 +61,7 @@ class Job5RunPage(QWidget):
 
         self._build_ui()
         self._setup_job_ui()
-        self._load_elements()
+        self._load_elements_from_excel()  # Load elements from Excel on start
         self._update_table()
 
     # =========================================================================
@@ -69,7 +80,7 @@ class Job5RunPage(QWidget):
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(12, 0, 12, 0)
 
-        self.title_label = QLabel(f"Job 5: Raw Intensity - {self.group_name}")
+        self.title_label = QLabel(f"Job 5: Raw Intensity (Simulation) - {self.group_name}")
         self.title_label.setStyleSheet("color:white;font:bold 10pt Arial;")
         title_layout.addWidget(self.title_label)
         title_layout.addStretch()
@@ -102,7 +113,7 @@ class Job5RunPage(QWidget):
         ol.setContentsMargins(10, 10, 10, 10)
         ol.setSpacing(6)
 
-        # ── Job Parameters Area (Sample Name) ────────────────────────────
+        # ── Job Parameters Area (ST Number) ────────────────────────────
         self.params_area = QWidget()
         self.params_area.setFixedHeight(40)
         ol.addWidget(self.params_area)
@@ -124,7 +135,7 @@ class Job5RunPage(QWidget):
         ol.addWidget(self.progress_bar)
 
         # ── Status Label ─────────────────────────────────────────────────
-        self.status_label = QLabel("Ready. Press F1: Start to begin.")
+        self.status_label = QLabel("Ready. Enter ST number and press F1: Start.")
         self.status_label.setStyleSheet(
             "QLabel{"
             "background:#d4d0c8;"
@@ -142,7 +153,7 @@ class Job5RunPage(QWidget):
         self.st_counter.setStyleSheet("font:bold 9pt Arial; color:#555555;")
         ol.addWidget(self.st_counter)
 
-        # ── Results Table (with scroll) ────────────────────────────────
+        # ── Results Table ────────────────────────────────────────────────
         self.table = QTableWidget()
         self.table.setStyleSheet(
             "QTableWidget{"
@@ -174,7 +185,7 @@ class Job5RunPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setDefaultSectionSize(27)
-        ol.addWidget(self.table, stretch=1)  # Table takes remaining space
+        ol.addWidget(self.table, stretch=1)
 
         # ── Status Footer ──────────────────────────────────────────────────
         footer = QWidget()
@@ -210,7 +221,7 @@ class Job5RunPage(QWidget):
         bbp = btn_bar.palette()
         bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
         btn_bar.setPalette(bbp)
-        btn_bar.setFixedHeight(40)  # Fixed height for buttons
+        btn_bar.setFixedHeight(40)
 
         bbl = QHBoxLayout(btn_bar)
         bbl.setContentsMargins(0, 4, 0, 4)
@@ -239,23 +250,23 @@ class Job5RunPage(QWidget):
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_stop.setEnabled(False)
 
+        self.btn_end = QPushButton("F5: End Analysis")
+        self.btn_end.setStyleSheet(btn_style)
+        self.btn_end.clicked.connect(self._on_end_analysis)
+
         self.btn_print = QPushButton("F4: Print")
         self.btn_print.setStyleSheet(btn_style)
         self.btn_print.clicked.connect(self._on_print)
 
-        self.btn_export = QPushButton("Export CSV")
+        self.btn_export = QPushButton("Export Excel")
         self.btn_export.setStyleSheet(btn_style)
         self.btn_export.clicked.connect(self._on_export)
 
-        self.btn_reset = QPushButton("F7: Reset")
-        self.btn_reset.setStyleSheet(btn_style)
-        self.btn_reset.clicked.connect(self._on_reset)
-
         bbl.addWidget(self.btn_start)
         bbl.addWidget(self.btn_stop)
+        bbl.addWidget(self.btn_end)
         bbl.addWidget(self.btn_print)
         bbl.addWidget(self.btn_export)
-        bbl.addWidget(self.btn_reset)
         bbl.addStretch()
 
         canc = QPushButton("9:Cancel")
@@ -263,27 +274,23 @@ class Job5RunPage(QWidget):
         canc.clicked.connect(self._on_cancel)
         bbl.addWidget(canc)
 
-        ol.addWidget(btn_bar)  # Button bar at the very bottom
+        ol.addWidget(btn_bar)
 
     # =========================================================================
     # Job-Specific UI Setup
     # =========================================================================
 
     def _setup_job_ui(self):
-        """Set up job-specific parameters UI (sample name input)."""
-        # Properly clear the params_area
+        """Set up job-specific parameters UI (ST Number input)."""
         if self.params_area.layout():
-            # Remove all child widgets
             while self.params_area.layout().count():
                 item = self.params_area.layout().takeAt(0)
                 if item.widget():
                     item.widget().deleteLater()
-            # Delete the layout itself
             old_layout = self.params_area.layout()
             if old_layout:
                 old_layout.deleteLater()
 
-        # Create new layout
         layout = QVBoxLayout(self.params_area)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -291,56 +298,163 @@ class Job5RunPage(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        lbl = QLabel("Sample Name:")
+        lbl = QLabel("ST Number:")
         lbl.setStyleSheet("color:black;font:9pt Arial;")
         row.addWidget(lbl)
 
-        self.sample_name = QLineEdit("UNKNOWN-001")
-        self.sample_name.setStyleSheet(
+        self.st_number_input = QLineEdit()
+        self.st_number_input.setPlaceholderText("e.g., abc123")
+        self.st_number_input.setStyleSheet(
             "QLineEdit{background:white;color:black;border:1px solid #888888;"
             "font:9pt Arial;padding:2px 4px;}"
         )
-        self.sample_name.setFixedWidth(200)
-        row.addWidget(self.sample_name)
+        self.st_number_input.setFixedWidth(200)
+        row.addWidget(self.st_number_input)
 
         row.addStretch()
         layout.addLayout(row)
+
     # =========================================================================
-    # Data Loading
+    # Data Loading – Elements from Excel
     # =========================================================================
 
-    def _load_elements(self):
-        """Load element names from Page 3."""
-        session = get_session()
+    def _load_elements_from_excel(self):
+        """
+        Load element names from the first column of the Excel file.
+        If the file is not found or empty, fall back to an empty list.
+        """
+        if not OPENPYXL_AVAILABLE:
+            QMessageBox.critical(self, "Missing Library",
+                "openpyxl is not installed.\n"
+                "Please install it using: pip install openpyxl")
+            self.element_names = []
+            return
+
+        if not os.path.exists(SIMULATION_EXCEL):
+            # File missing: we can show a warning but allow the user to create it.
+            self.status_label.setText(f"Excel file not found: {SIMULATION_EXCEL}")
+            self.element_names = []
+            return
+
         try:
-            group = session.get(AnalyticalGroup, self.group_id)
-            if group and group.page_03_channel:
-                for entry in group.page_03_channel:
-                    ele = entry.get("ele", "")
-                    if ele:
-                        self.element_names.append(ele)
-            if not self.element_names:
-                # No elements defined; user must set up Page 3.
+            wb = load_workbook(SIMULATION_EXCEL, data_only=True)
+            ws = wb.active
+
+            # Read header row to validate, but we only need the first column
+            header = []
+            for cell in ws[1]:
+                header.append(cell.value if cell.value is not None else "")
+
+            if not header:
                 self.element_names = []
-        finally:
-            session.close()
+                return
+
+            # First column should be "Element"
+            if header[0].strip().upper() != "ELEMENT":
+                QMessageBox.critical(self, "Error",
+                    "First column must be 'Element'.\n"
+                    f"Found: {header[0]}")
+                self.element_names = []
+                return
+
+            # Read all rows starting from row 2
+            elements = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if len(row) == 0 or row[0] is None:
+                    continue
+                element = str(row[0]).strip()
+                if element:
+                    elements.append(element)
+
+            self.element_names = elements
+            self.status_label.setText(f"Loaded {len(elements)} elements from Excel.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error Reading Excel", str(e))
+            self.element_names = []
+
+    def _load_excel_data(self, st_number: str):
+        """
+        Load the Excel file and extract:
+        - A list of element names (first column)
+        - A dict mapping element name -> value for the given ST column.
+        Returns (element_names, values_dict) or (None, None) on error.
+        """
+        if not OPENPYXL_AVAILABLE:
+            return None, None
+
+        if not os.path.exists(SIMULATION_EXCEL):
+            return None, None
+
+        try:
+            wb = load_workbook(SIMULATION_EXCEL, data_only=True)
+            ws = wb.active
+
+            # Read header row
+            header = []
+            for cell in ws[1]:
+                header.append(cell.value if cell.value is not None else "")
+
+            if not header:
+                return None, None
+
+            # First column must be "Element"
+            if header[0].strip().upper() != "ELEMENT":
+                return None, None
+
+            # Find ST column index
+            col_index = -1
+            for i, col in enumerate(header):
+                if col is not None and col.strip().upper() == st_number.strip().upper():
+                    col_index = i
+                    break
+
+            if col_index == -1:
+                return None, None
+
+            # Read data rows
+            elements = []
+            values = {}
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if len(row) == 0 or row[0] is None:
+                    continue
+                element = str(row[0]).strip()
+                if not element:
+                    continue
+                if col_index >= len(row):
+                    continue
+                val = row[col_index]
+                if val is None:
+                    val = 0.0
+                if isinstance(val, str):
+                    val = val.replace('%', '').strip()
+                try:
+                    value = float(val)
+                except (ValueError, TypeError):
+                    value = 0.0
+                elements.append(element)
+                values[element] = value
+
+            return elements, values
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error Reading Excel", str(e))
+            return None, None
 
     # =========================================================================
     # Table Management
     # =========================================================================
 
     def _update_table(self):
-        """Update the results table with all burns and statistics."""
+        """Update the results table with Element, AVE, N=1, N=2, ... only."""
         if not self.element_names:
-            # Show a message or empty table with headers
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
             return
 
         num_burns = len(self.results)
-        # Columns: Element, AVE, N=1, N=2, ..., R, SD, CV
-        # Total columns = 1 (Element) + 1 (AVE) + num_burns + 3 (R,SD,CV)
-        num_cols = 2 + num_burns + 3
+        # Columns: Element, AVE, N=1, N=2, ...
+        num_cols = 2 + num_burns
 
         self.table.setRowCount(len(self.element_names))
         self.table.setColumnCount(num_cols)
@@ -348,7 +462,6 @@ class Job5RunPage(QWidget):
         headers = ["Element", "AVE"]
         for i in range(num_burns):
             headers.append(f"N={i+1}")
-        headers.extend(["R", "S.D.", "C.V."])
 
         self.table.setHorizontalHeaderLabels(headers)
 
@@ -357,66 +470,39 @@ class Job5RunPage(QWidget):
         self.table.setColumnWidth(1, 70)
         for i in range(num_burns):
             self.table.setColumnWidth(2 + i, 70)
-        self.table.setColumnWidth(2 + num_burns, 60)    # R
-        self.table.setColumnWidth(3 + num_burns, 60)    # S.D.
-        self.table.setColumnWidth(4 + num_burns, 60)    # C.V.
 
-        # Fill data
         for row, elem in enumerate(self.element_names):
             # Element name
             elem_item = QTableWidgetItem(elem)
             elem_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, elem_item)
 
-            # Collect values for this element across burns
-            values = []
-            for burn in self.results:
-                val = burn.get(elem, 0.0)
-                values.append(val)
+            if num_burns == 0:
+                # FIX: Explicitly clear the AVE column when there are no burns
+                empty_item = QTableWidgetItem("")
+                empty_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+                self.table.setItem(row, 1, empty_item)
+            else:
+                values = []
+                for burn in self.results:
+                    val = burn.get(elem, 0.0)
+                    values.append(val)
 
-            if values:
-                # Average
-                avg = sum(values) / len(values)
-                avg_item = QTableWidgetItem(f"{avg:.3f}")
-                avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 1, avg_item)
+                if values:
+                    avg = sum(values) / len(values)
+                    avg_item = QTableWidgetItem(f"{avg:.3f}")
+                    avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+                    self.table.setItem(row, 1, avg_item)
 
-                # Individual burns
-                for i, val in enumerate(values):
-                    val_item = QTableWidgetItem(f"{val:.3f}")
-                    val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                    self.table.setItem(row, 2 + i, val_item)
-
-                # R (Range)
-                r_val = max(values) - min(values)
-                r_item = QTableWidgetItem(f"{r_val:.3f}")
-                r_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 2 + num_burns, r_item)
-
-                # S.D. (sample standard deviation)
-                if len(values) > 1:
-                    mean = avg
-                    variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
-                    sd = math.sqrt(variance)
-                else:
-                    sd = 0.0
-                sd_item = QTableWidgetItem(f"{sd:.3f}")
-                sd_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 3 + num_burns, sd_item)
-
-                # C.V. (Coefficient of Variation)
-                if avg != 0:
-                    cv = (sd / avg) * 100
-                else:
-                    cv = 0.0
-                cv_item = QTableWidgetItem(f"{cv:.2f}%")
-                cv_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 4 + num_burns, cv_item)
+                    for i, val in enumerate(values):
+                        val_item = QTableWidgetItem(f"{val:.3f}")
+                        val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+                        self.table.setItem(row, 2 + i, val_item)
 
         self.table.resizeRowsToContents()
 
     # =========================================================================
-    # HV Controls
+    # HV Controls (visual only)
     # =========================================================================
 
     def _toggle_hv(self):
@@ -465,109 +551,77 @@ class Job5RunPage(QWidget):
     # =========================================================================
 
     def _on_start(self):
-        if self.worker and self.worker.isRunning():
+        """Simulate a burn: read data from Excel for the entered ST number."""
+        st_number = self.st_number_input.text().strip()
+        if not st_number:
+            QMessageBox.warning(self, "Missing ST", "Please enter an ST number.")
             return
 
-        # Check HV
-        if not self.main_window.get_hv_status():
-            reply = QMessageBox.question(
-                self,
-                "HV is OFF",
-                "PMT power (HV) is OFF. Turn it ON?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.main_window.toggle_hv()
-                self._update_hv_button()
-                self._update_footer_hv()
-            else:
-                return
+        elements, data = self._load_excel_data(st_number)
+        if elements is None or data is None:
+            QMessageBox.critical(self, "Error",
+                f"Failed to load data for ST '{st_number}'.\n"
+                f"Check that the Excel file exists and the ST column is present.")
+            return
 
-        self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self.status_label.setText("Starting analysis...")
-        self.progress_bar.setValue(0)
+        # Update element names from Excel
+        self.element_names = elements
+        self._update_table()
 
-        params = {"sample_name": self.sample_name.text().strip()}
+        # Build burn result: only elements that exist in Excel
+        burn_result = {}
+        for elem in self.element_names:
+            burn_result[elem] = data.get(elem, 0.0)
 
-        self.worker = AnalysisWorker(
-            group_id=self.group_id,
-            params=params
-        )
-        self.worker.progress.connect(self._on_progress)
-        self.worker.result.connect(self._on_result)
-        self.worker.error.connect(self._on_error)
-        self.worker.finished.connect(self._on_finished)
-        self.worker.start()
-
-    def _on_stop(self):
-        if self.worker and self.worker.isRunning():
-            self.worker.stop()
-            self.status_label.setText("Stopping...")
-            self.btn_stop.setEnabled(False)
-
-    def _on_progress(self, step: str, percent: int):
-        self.status_label.setText(step)
-        self.progress_bar.setValue(percent)
-
-    def _on_result(self, results: dict):
-        # Extract the intensity data
-        if "intensities" in results:
-            data = results["intensities"]
-        elif "raw_adc" in results:
-            data = results["raw_adc"]
-        else:
-            data = results
-
-        # Increment counters
+        # Store result
+        self.results.append(burn_result)
         self.an_count += 1
         self.tan_count += 1
         self._update_footer_counts()
-
-        # Store result
-        self.results.append(data)
         self.st_counter.setText(f"ST No.: {len(self.results)}")
 
-        # Update table
         self._update_table()
-
-        self.status_label.setText(f"Burn {len(self.results)} complete.")
+        self.status_label.setText(f"Burn {len(self.results)} complete (simulation).")
         self.progress_bar.setValue(100)
 
-    def _on_error(self, error_msg: str):
-        QMessageBox.critical(self, "Analysis Error", error_msg)
-        self.status_label.setText(f"Error: {error_msg}")
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
-        self.progress_bar.setValue(0)
+        QTimer.singleShot(2000, lambda: self.progress_bar.setValue(0))
 
-    def _on_finished(self):
-        self.worker = None
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
+    def _on_stop(self):
+        self.status_label.setText("Stopped (simulation).")
 
-        if self.status_label.text() == "Stopping...":
-            self.status_label.setText("Stopped")
+    def _on_end_analysis(self):
+        """Clear all burns, reset ST number input, reset counters."""
+        if not self.results:
+            QMessageBox.information(self, "No Data", "No burns to clear.")
+            return
 
-    def _on_reset(self):
-        """Reset all burns for current sample."""
-        if self.results:
-            reply = QMessageBox.question(
-                self,
-                "Reset",
-                "Clear all burns for this sample?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.results = []
-                self.st_counter.setText("ST No.: —")
-                self._update_table()
-                self.status_label.setText("Reset. Ready for new sample.")
+        reply = QMessageBox.question(
+            self,
+            "End Analysis",
+            "Clear all burns for this sample?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            # Clear results and reset table
+            self.results = []
+            self.st_counter.setText("ST No.: —")
+            self._update_table()  # Shows only Element and AVE (empty) columns
 
-    # =========================================================================
-    # Print
-    # =========================================================================
+            # Reset counters
+            self.an_count = 0
+            self.tan_count = 0
+            self._update_footer_counts()
 
+            # Clear the ST number input field
+            self.st_number_input.clear()
+
+            # Reset progress and status
+            self.progress_bar.setValue(0)
+            self.status_label.setText("Analysis ended. Ready for new sample.")
+
+            # Reset the HV status just to keep consistent (visual)
+            self._update_footer_hv()    
+            
     def _on_print(self):
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setPageOrientation(QPageLayout.Orientation.Landscape)
@@ -582,12 +636,10 @@ class Job5RunPage(QWidget):
         doc.print(printer)
 
     def _generate_html_report(self) -> str:
-        """Generate HTML report for printing."""
         title = f"SpectraSoft Job 5 Report - {self.group_name}"
         timestamp = QDate.currentDate().toString("dd-MM-yyyy")
-        sample = self.sample_name.text() if hasattr(self, 'sample_name') else "Unknown"
+        st_number = self.st_number_input.text().strip() if hasattr(self, 'st_number_input') else "Unknown"
 
-        # Build table rows
         rows = []
         if self.table.rowCount() > 0 and self.table.columnCount() > 0:
             for row in range(self.table.rowCount()):
@@ -628,9 +680,9 @@ class Job5RunPage(QWidget):
         <body>
             <h1>{title}</h1>
             <table class="meta">
-                <tr><td><b>Sample:</b> {sample}</td>
+                <tr><td><b>ST Number:</b> {st_number}</td>
                     <td><b>Date:</b> {timestamp}</td></tr>
-                <tr><td><b>Job:</b> 5 (INT.1)</td>
+                <tr><td><b>Job:</b> 5 (INT.1 Simulation)</td>
                     <td><b>Burns:</b> {len(self.results)}</td></tr>
             </table>
             {table_html}
@@ -642,7 +694,7 @@ class Job5RunPage(QWidget):
         """
 
     # =========================================================================
-    # Export to CSV
+    # Export to Excel
     # =========================================================================
 
     def _on_export(self):
@@ -650,34 +702,41 @@ class Job5RunPage(QWidget):
             QMessageBox.warning(self, "No Data", "No burns to export.")
             return
 
+        if not OPENPYXL_AVAILABLE:
+            QMessageBox.critical(self, "Missing Library",
+                "openpyxl is not installed.\n"
+                "Please install it using: pip install openpyxl")
+            return
+
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Analysis Results", "analysis_results.csv",
-            "CSV Files (*.csv)"
+            self, "Export Analysis Results", "analysis_results.xlsx",
+            "Excel Files (*.xlsx)"
         )
         if not path:
             return
 
         try:
-            with open(path, 'w', newline='') as f:
-                writer = csv.writer(f)
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Analysis Results"
 
-                # Header
-                headers = ["Element"]
-                for i in range(len(self.results)):
-                    headers.append(f"N={i+1}")
-                headers.extend(["AVE", "R", "S.D.", "C.V."])
-                writer.writerow(headers)
+            headers = []
+            for col in range(self.table.columnCount()):
+                item = self.table.horizontalHeaderItem(col)
+                headers.append(item.text() if item else "")
+            ws.append(headers)
 
-                # Data
-                for row in range(self.table.rowCount()):
-                    row_data = []
-                    for col in range(self.table.columnCount()):
-                        item = self.table.item(row, col)
-                        row_data.append(item.text() if item else "")
-                    writer.writerow(row_data)
+            for row in range(self.table.rowCount()):
+                row_data = []
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    row_data.append(item.text() if item else "")
+                ws.append(row_data)
 
+            wb.save(path)
             QMessageBox.information(self, "Exported",
                 f"Results exported to:\n{path}")
+
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
@@ -686,24 +745,7 @@ class Job5RunPage(QWidget):
     # =========================================================================
 
     def _on_cancel(self):
-        if self.worker and self.worker.isRunning():
-            reply = QMessageBox.question(
-                self,
-                "Cancel Analysis",
-                "Analysis is still running. Stop and cancel?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.worker.stop()
-                QTimer.singleShot(500, self._go_back)
-            else:
-                return
-        else:
-            self._go_back()
-
-    def _go_back(self):
-        from ui.analysis.job_selection import JobSelectionPage
-        self.main_window.set_right_widget(JobSelectionPage(self.main_window))
+        self.main_window._show_home_content()
 
     def wants_fullscreen(self) -> bool:
         return True
