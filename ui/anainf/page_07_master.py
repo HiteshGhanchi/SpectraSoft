@@ -41,6 +41,7 @@ from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.json_export import export_page07_master
 
 MAX_ELEMENTS = 32
 
@@ -455,7 +456,7 @@ class MasterCurvePage(QWidget):
             session.close()
 
     def _save(self):
-        """Save corrections to database."""
+        """Save corrections to database and mirror to import_data/page_07_master.json."""
         data = self._collect()
         session = get_session()
         try:
@@ -463,6 +464,8 @@ class MasterCurvePage(QWidget):
             if g:
                 g.page_07_master = data
                 session.commit()
+                # ── Mirror to import_data/page_07_master.json ──────────
+                export_page07_master(data)
         finally:
             session.close()
 

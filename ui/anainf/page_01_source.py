@@ -54,6 +54,7 @@ from PyQt6.QtCore import Qt
 
 from core.database import get_session
 from core.models import AnalyticalGroup, SourceCode
+from core.json_export import export_page01_source
 
 
 def _load_source_options() -> list:
@@ -440,12 +441,15 @@ class SourceConditionPage(QWidget):
                     break
 
     def _save(self):
+        data = self._collect()
         session = get_session()
         try:
             g = session.get(AnalyticalGroup, self.group_id)
             if g:
-                g.page_01_source = self._collect()
+                g.page_01_source = data
                 session.commit()
+                # ── Mirror to import_data/page_01_source.json ────────────
+                export_page01_source(data)
         finally:
             session.close()
 

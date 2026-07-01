@@ -37,6 +37,7 @@ from PyQt6.QtGui import QColor, QIntValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup, MasterElement
+from core.json_export import export_attenuator
 
 
 class AttenuatorPage(QWidget):
@@ -409,13 +410,16 @@ class AttenuatorPage(QWidget):
         return {"rows": rows}
 
     def _save(self):
-        """Save data to database."""
+        """Save data to database and mirror to import_data/attenuator.json."""
+        data = self._collect()
         session = get_session()
         try:
             g = session.get(AnalyticalGroup, self.group_id)
             if g:
-                g.page_02_attenuator = self._collect()
+                g.page_02_attenuator = data
                 session.commit()
+                # ── Mirror to import_data/attenuator.json ───────────────
+                export_attenuator(data.get("rows", []))
         finally:
             session.close()
 

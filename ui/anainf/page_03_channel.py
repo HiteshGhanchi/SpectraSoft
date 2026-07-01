@@ -39,6 +39,7 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import AnalyticalGroup, MasterElement
+from core.json_export import export_page03_channel
 
 MAX_ELEMENTS = 32
 
@@ -585,7 +586,7 @@ class ChannelPage(QWidget):
         self._populate_table_from_data([])
 
     def _save_data(self):
-        """Save data to database."""
+        """Save data to database and mirror to import_data/page_03_channel.json."""
         data = self._collect()
         session = get_session()
         try:
@@ -593,6 +594,8 @@ class ChannelPage(QWidget):
             if g:
                 g.page_03_channel = data
                 session.commit()
+                # ── Mirror to import_data/page_03_channel.json ──────────
+                export_page03_channel(data)
         finally:
             session.close()
 

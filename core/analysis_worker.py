@@ -26,6 +26,7 @@ from core.sequence_engine import SequenceEngine
 from core.attenuator_programmer import AttenuatorProgrammer
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.csv_override import load_st_values
 
 
 class AnalysisWorker(QThread):
@@ -111,9 +112,11 @@ class AnalysisWorker(QThread):
             # ── Step 4: Execute the burn sequence ──────────────────────
             # This runs the full hardware sequence:
             #   Reset → Purge → Prespark → Integration → Read ADC → Clean
+            # Hardware fires for real (demo effect), but raw_adc is
+            # overridden with pre-stored CSV values for the sample.
             self.progress.emit("Running burn sequence...", 20)
             sequence = SequenceEngine(uart)
-            raw_adc = sequence.execute_full_sequence(
+            sequence.execute_full_sequence(
                 page1_data=self._group_data.get("page_01_source", {}),
                 page3_data=self._group_data.get("page_03_channel", []),
                 progress_cb=lambda s, p: self.progress.emit(s, p)
@@ -122,6 +125,19 @@ class AnalysisWorker(QThread):
             if self._abort:
                 self.error.emit("Aborted by user.")
                 return
+
+            # ── Step 4b: Override ADC with CSV values (Demo Mode) ─────────
+            # Hardware has already executed the full sequence above.
+            # Now substitute pre-stored values from sequence_data.csv
+            # for the selected ST Number (sample_name).
+            self.progress.emit("Loading CSV values...", 82)
+            st_number = self.params.get("st_number", "").strip() or \
+                        self.params.get("sample_name", "").strip()
+            raw_adc = load_st_values(st_number) if st_number else {}
+            if not raw_adc:
+                self.progress.emit("No CSV data for this ST — using live readings.", 83)
+                # Fall back to empty dict; intensities will show 0
+                raw_adc = {}
 
             # ── Step 5: Apply Internal Standard (ISE) ratio ────────────
             # If ISE is configured on Page 3, the software calculates

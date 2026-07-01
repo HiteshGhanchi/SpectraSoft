@@ -39,6 +39,7 @@ from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.json_export import export_page06_matrix
 
 MAX_CORRECTIONS = 100  # Maximum number of correction rows
 
@@ -461,7 +462,7 @@ class CorrectionPage(QWidget):
         self._update_table_height()
 
     def _save(self):
-        """Save corrections to database."""
+        """Save corrections to database and mirror to import_data/page_06_matrix.json."""
         data = self._collect()
         session = get_session()
         try:
@@ -469,6 +470,8 @@ class CorrectionPage(QWidget):
             if g:
                 g.page_06_matrix = data
                 session.commit()
+                # ── Mirror to import_data/page_06_matrix.json ──────────
+                export_page06_matrix(data)
         finally:
             session.close()
 

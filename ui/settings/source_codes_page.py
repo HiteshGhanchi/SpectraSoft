@@ -4,6 +4,7 @@ SpectraSoft — Source Codes Settings Page
 """
 
 import json
+from core.json_export import export_source_codes
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTableWidget, QTableWidgetItem,
@@ -245,6 +246,8 @@ class SourceCodesPage(QWidget):
                     session.add(SourceCode(
                         entry_no=r["entry_no"], name=r["name"]))
             session.commit()
+            # ── Mirror to import_data/source_codes.json ─────────────────
+            export_source_codes(rows)
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Icon.Information)
             msg.setWindowTitle("Saved")

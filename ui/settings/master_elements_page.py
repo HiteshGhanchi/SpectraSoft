@@ -17,6 +17,7 @@ Rules:
 """
 
 import json
+from core.json_export import export_master_elements
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTableWidget, QTableWidgetItem,
@@ -308,6 +309,8 @@ class MasterElementsPage(QWidget):
                     wavelength=r["wavelength"],
                 ))
             session.commit()
+            # ── Mirror to import_data/master_elements.json ────────────────
+            export_master_elements(rows)
             QMessageBox.information(self, "Saved",
                 f"Master elements saved successfully.\n"
                 f"{len(rows)} channels configured.")

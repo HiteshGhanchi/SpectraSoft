@@ -40,6 +40,7 @@ from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.json_export import export_page05_wc
 
 MAX_ELEMENTS = 32
 
@@ -478,7 +479,7 @@ class WorkingCurvePage(QWidget):
             session.close()
 
     def _save(self):
-        """Save coefficients to database."""
+        """Save coefficients to database and mirror to import_data/page_05_wc.json."""
         data = self._collect()
         session = get_session()
         try:
@@ -486,6 +487,8 @@ class WorkingCurvePage(QWidget):
             if g:
                 g.page_05_wc = data
                 session.commit()
+                # ── Mirror to import_data/page_05_wc.json ──────────────
+                export_page05_wc(data)
         finally:
             session.close()
 

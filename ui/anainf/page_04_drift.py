@@ -45,6 +45,7 @@ from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.json_export import export_page04_drift
 
 
 class DriftCorrectionPage(QWidget):
@@ -396,12 +397,15 @@ class DriftCorrectionPage(QWidget):
             return 0.0
 
     def _save(self):
+        data = self._collect()
         session = get_session()
         try:
             g = session.get(AnalyticalGroup, self.group_id)
             if g:
-                g.page_04_drift = self._collect()
+                g.page_04_drift = data
                 session.commit()
+                # ── Mirror to import_data/page_04_drift.json ────────────
+                export_page04_drift(data)
         finally:
             session.close()
 

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QAbstractItemView, QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QDate
-from PyQt6.QtGui import QColor, QTextDocument, QPageLayout
+from PyQt6.QtGui import QColor, QTextDocument, QPageLayout, QKeySequence, QShortcut
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis_worker import AnalysisWorker
@@ -102,9 +102,9 @@ class Job5RunPage(QWidget):
         ol.setContentsMargins(10, 10, 10, 10)
         ol.setSpacing(6)
 
-        # ── Job Parameters Area (Sample Name) ────────────────────────────
+        # ── Job Parameters Area (Sample Name + ST Number) ──────────────
         self.params_area = QWidget()
-        self.params_area.setFixedHeight(40)
+        self.params_area.setFixedHeight(70)
         ol.addWidget(self.params_area)
 
         # ── Progress Bar ─────────────────────────────────────────────────
@@ -265,12 +265,19 @@ class Job5RunPage(QWidget):
 
         ol.addWidget(btn_bar)  # Button bar at the very bottom
 
+        # ── Keyboard Shortcuts ────────────────────────────────────────────
+        QShortcut(QKeySequence("F1"), self, activated=self._on_start)
+        QShortcut(QKeySequence("F2"), self, activated=self._on_stop)
+        QShortcut(QKeySequence("F4"), self, activated=self._on_print)
+        QShortcut(QKeySequence("F7"), self, activated=self._on_reset)
+        QShortcut(QKeySequence("9"),  self, activated=self._on_cancel)
+
     # =========================================================================
     # Job-Specific UI Setup
     # =========================================================================
 
     def _setup_job_ui(self):
-        """Set up job-specific parameters UI (sample name input)."""
+        """Set up job-specific parameters UI (sample name + ST number inputs)."""
         # Properly clear the params_area
         if self.params_area.layout():
             # Remove all child widgets
@@ -286,25 +293,42 @@ class Job5RunPage(QWidget):
         # Create new layout
         layout = QVBoxLayout(self.params_area)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-
-        lbl = QLabel("Sample Name:")
-        lbl.setStyleSheet("color:black;font:9pt Arial;")
-        row.addWidget(lbl)
-
+        # ── Row 1: Sample Name (user-facing save label) ──────────────
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        lbl1 = QLabel("Sample Name:")
+        lbl1.setStyleSheet("color:black;font:9pt Arial;")
+        lbl1.setFixedWidth(90)
+        row1.addWidget(lbl1)
         self.sample_name = QLineEdit("UNKNOWN-001")
         self.sample_name.setStyleSheet(
             "QLineEdit{background:white;color:black;border:1px solid #888888;"
             "font:9pt Arial;padding:2px 4px;}"
         )
         self.sample_name.setFixedWidth(200)
-        row.addWidget(self.sample_name)
+        row1.addWidget(self.sample_name)
+        row1.addStretch()
+        layout.addLayout(row1)
 
-        row.addStretch()
-        layout.addLayout(row)
+        # ── Row 2: ST Number (CSV lookup key for demo mode) ───────────
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
+        lbl2 = QLabel("ST Number:")
+        lbl2.setStyleSheet("color:black;font:9pt Arial;")
+        lbl2.setFixedWidth(90)
+        row2.addWidget(lbl2)
+        self.st_number_input = QLineEdit("")
+        self.st_number_input.setPlaceholderText("e.g. ABCD, DEFG, DEFAULT, SJDJEDJ")
+        self.st_number_input.setStyleSheet(
+            "QLineEdit{background:white;color:black;border:1px solid #888888;"
+            "font:9pt Arial;padding:2px 4px;}"
+        )
+        self.st_number_input.setFixedWidth(200)
+        row2.addWidget(self.st_number_input)
+        row2.addStretch()
+        layout.addLayout(row2)
     # =========================================================================
     # Data Loading
     # =========================================================================
@@ -488,7 +512,10 @@ class Job5RunPage(QWidget):
         self.status_label.setText("Starting analysis...")
         self.progress_bar.setValue(0)
 
-        params = {"sample_name": self.sample_name.text().strip()}
+        params = {
+            "sample_name": self.sample_name.text().strip(),
+            "st_number":   self.st_number_input.text().strip(),
+        }
 
         self.worker = AnalysisWorker(
             group_id=self.group_id,
