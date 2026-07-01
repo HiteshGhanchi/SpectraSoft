@@ -100,7 +100,7 @@ def load_st_values(st_number: str, csv_path: str = CSV_FILE) -> Dict[str, int]:
                         cell = row[col_idx].strip()
                         if cell:
                             try:
-                                results[ele_name] = int(cell)
+                                results[ele_name] = float(cell)
                                 break   # Use first non-empty sequence value found
                             except ValueError:
                                 pass    # Skip non-numeric cells

@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer, QDate
+from PyQt6.QtCore import Qt, QTimer, QDate, QDateTime
 from PyQt6.QtGui import QColor, QTextDocument, QPageLayout, QKeySequence, QShortcut
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
@@ -611,7 +611,7 @@ class Job5RunPage(QWidget):
     def _generate_html_report(self) -> str:
         """Generate HTML report for printing."""
         title = f"SpectraSoft Job 5 Report - {self.group_name}"
-        timestamp = QDate.currentDate().toString("dd-MM-yyyy")
+        timestamp = QDateTime.currentDateTime().toString("dd-MM-yyyy HH:mm:ss")
         sample = self.sample_name.text() if hasattr(self, 'sample_name') else "Unknown"
 
         # Build table rows

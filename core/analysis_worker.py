@@ -78,6 +78,15 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
+            self.progress.emit("Validating ST Number...", 5)
+            st_number = self.params.get("st_number", "").strip() or \
+                        self.params.get("sample_name", "").strip()
+            
+            # Pre-load CSV data and fail instantly if ST Number is wrong
+            csv_data = load_st_values(st_number) if st_number else {}
+            if st_number and not csv_data:
+                raise ValueError("Please enter a valid ST Number.")
+
             # ── Step 2: Get shared UART connection (singleton) ────────
             # UARTManager is a singleton; calling UARTManager() returns
             # the same instance across the whole application.
@@ -129,22 +138,18 @@ class AnalysisWorker(QThread):
             # ── Step 4b: Override ADC with CSV values (Demo Mode) ─────────
             # Hardware has already executed the full sequence above.
             # Now substitute pre-stored values from sequence_data.csv
-            # for the selected ST Number (sample_name).
+            # (which we validated at the very beginning of this run).
             self.progress.emit("Loading CSV values...", 82)
-            st_number = self.params.get("st_number", "").strip() or \
-                        self.params.get("sample_name", "").strip()
-            raw_adc = load_st_values(st_number) if st_number else {}
-            if not raw_adc:
+            
+            if csv_data:
+                raw_adc = csv_data
+                self.progress.emit("Using exact CSV values for Demo Mode...", 85)
+                results = raw_adc  # Bypass ISE division so floats like 3.59 stay 3.59
+            else:
                 self.progress.emit("No CSV data for this ST — using live readings.", 83)
-                # Fall back to empty dict; intensities will show 0
-                raw_adc = {}
-
-            # ── Step 5: Apply Internal Standard (ISE) ratio ────────────
-            # If ISE is configured on Page 3, the software calculates
-            # the relative intensity: (Element / ISE) × 100
-            # If no ISE is configured, it shows normalized ADC (0.0-1.0).
-            self.progress.emit("Processing intensities...", 85)
-            results = self._apply_ise_ratio(raw_adc)
+                raw_adc = {} # If no hardware, this stays empty
+                self.progress.emit("Processing intensities...", 85)
+                results = self._apply_ise_ratio(raw_adc)
 
             # ── Step 6: Emit results ─────────────────────────────────────
             self.progress.emit("Done!", 100)

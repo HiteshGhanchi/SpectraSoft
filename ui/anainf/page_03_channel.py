@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QComboBox
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 
 from core.database import get_session
 from core.models import AnalyticalGroup, MasterElement
@@ -165,7 +165,10 @@ class ChannelPage(QWidget):
         ml.setContentsMargins(20, 16, 20, 12)
         ml.setSpacing(8)
 
-        # ── Table Title ──────────────────────────────────────────────────
+        # ── Header Layout (Title + Counter) ──────────────────────────────
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel(""), stretch=1)  # Left spacer for centering
+
         title = QLabel("ORDER OF ANALYTICAL CHANNEL & INTERNAL STANDARD")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
@@ -174,10 +177,21 @@ class ChannelPage(QWidget):
             "color:black;"
             "font:bold 10pt Arial;"
             "border:1px solid #888888;"
-            "padding:3px 0px;"
+            "padding:3px 15px;"
             "}"
         )
-        ml.addWidget(title)
+        header_layout.addWidget(title)
+
+        # Container for the counter on the right
+        right_container = QHBoxLayout()
+        self.lbl_count = QLabel("Total Elements Selected: 0")
+        self.lbl_count.setStyleSheet("font: bold 9pt Arial; color: #2c3e50;")
+        self.lbl_count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        right_container.addStretch()
+        right_container.addWidget(self.lbl_count)
+        
+        header_layout.addLayout(right_container, stretch=1)
+        ml.addLayout(header_layout)
 
         # ── Single Centered Table ────────────────────────────────────────
         self.table = self._create_table()
@@ -224,6 +238,8 @@ class ChannelPage(QWidget):
         )
         ctrl_layout.addWidget(info_lbl)
 
+        ctrl_layout.addStretch()
+
         ml.addLayout(ctrl_layout)
 
         # ── Bottom Nav ──────────────────────────────────────────────────
@@ -237,23 +253,27 @@ class ChannelPage(QWidget):
         bbl.setContentsMargins(12, 4, 12, 8)
         bbl.setSpacing(4)
 
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
+        for txt, slot, key in [
+            ("F1:OK", self._on_ok, "F1"),
+            ("F2:Next", self._on_next, "F2"),
+            ("F3:Pre.", self._on_pre, "F3"),
+            ("F4:Print", self._on_print, "F4"),
         ]:
             b = QPushButton(txt)
             b.setStyleSheet(btn_style)
             b.clicked.connect(slot)
             bbl.addWidget(b)
+            QShortcut(QKeySequence(key), self).activated.connect(slot)
 
         bbl.addStretch()
 
-        canc = QPushButton("9:Cancel")
+        canc = QPushButton("F9:Cancel")
         canc.setStyleSheet(btn_style)
         canc.clicked.connect(self._on_cancel)
         bbl.addWidget(canc)
+        QShortcut(QKeySequence("F9"), self).activated.connect(self._on_cancel)
+        bbl.addWidget(canc)
+        QShortcut(QKeySequence(Qt.KeyboardModifier.KeypadModifier | Qt.Key.Key_9), self).activated.connect(self._on_cancel)
 
         root.addWidget(btn_bar)
 
@@ -460,6 +480,13 @@ class ChannelPage(QWidget):
                 session.close()
         else:
             ele_item.setText("")
+            
+        self._update_count()
+
+    def _update_count(self):
+        """Update the label showing the number of elements selected."""
+        count = sum(1 for row in range(self.table.rowCount()) if self.table.cellWidget(row, 1).currentData())
+        self.lbl_count.setText(f"Total Elements Selected: {count}")
 
         self._update_ch_count()
 
@@ -567,7 +594,7 @@ class ChannelPage(QWidget):
                 else:
                     ise_combo.setCurrentIndex(0)  # default to 0
 
-        self._update_ch_count()
+        self._update_count()
 
     def _load_data(self):
         """Load saved data from database."""

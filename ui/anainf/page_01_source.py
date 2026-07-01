@@ -51,6 +51,7 @@ from PyQt6.QtWidgets import (
     QFrame, QMessageBox, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence, QShortcut
 
 from core.database import get_session
 from core.models import AnalyticalGroup, SourceCode
@@ -378,23 +379,27 @@ class SourceConditionPage(QWidget):
             "}"
         )
 
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
+        for txt, slot, key in [
+            ("F1:OK", self._on_ok, "F1"),
+            ("F2:Next", self._on_next, "F2"),
+            ("F3:Pre.", self._on_pre, "F3"),
+            ("F4:Print", self._on_print, "F4"),
         ]:
             b = QPushButton(txt)
             b.setStyleSheet(btn_style)
             b.clicked.connect(slot)
             bbl.addWidget(b)
+            QShortcut(QKeySequence(key), self).activated.connect(slot)
 
         bbl.addStretch()
 
-        canc = QPushButton("9:Cancel")
+        canc = QPushButton("F9:Cancel")
         canc.setStyleSheet(btn_style)
         canc.clicked.connect(self._on_cancel)
         bbl.addWidget(canc)
+        QShortcut(QKeySequence("F9"), self).activated.connect(self._on_cancel)
+        bbl.addWidget(canc)
+        QShortcut(QKeySequence(Qt.KeyboardModifier.KeypadModifier | Qt.Key.Key_9), self).activated.connect(self._on_cancel)
 
         root.addWidget(btn_bar)
 
