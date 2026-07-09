@@ -7,16 +7,25 @@ ITG No. is read-only and serves as the primary key.
 
 Columns:
 - ITG No.: Integrator number (1-45, fixed, read-only)
-- Ele. Name: Element symbol (editable, must be unique)
+- Ele. Name: Element symbol/name (editable, may be empty)
 - Wavelength: Wavelength in nm (editable)
 
 Rules:
 - Exactly 45 rows, ITG No. cannot be changed
-- Ele. Name must be unique (case-insensitive)
-- Ele. Name is required (cannot be empty)
+- Ele. Name may be empty for unused channels
+- The same Ele. Name may appear on multiple ITG channels
+  because one element can have multiple physical analytical lines
+  for different concentration ranges.
+
+Example:
+- ITG 2  -> C at 193.0 nm
+- ITG 37 -> C at 165.8 nm
+
+This is valid because both are different physical detector channels.
 """
 
 import json
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTableWidget, QTableWidgetItem,
@@ -27,6 +36,7 @@ from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import MasterElement
+
 
 NUM_ROWS = 45  # ITG 1 to 45
 
@@ -87,7 +97,7 @@ class MasterElementsPage(QWidget):
         ml.setContentsMargins(20, 16, 20, 12)
         ml.setSpacing(8)
 
-        # ── Excel-Style Table (Scrollable) ──────────────────────────────
+        # ── Table Frame ──────────────────────────────────────────────────
         table_frame = QFrame()
         table_frame.setStyleSheet(
             "QFrame{"
@@ -95,13 +105,13 @@ class MasterElementsPage(QWidget):
             "border:1px solid #888888;"
             "}"
         )
-        # Fixed height for table frame to allow scrolling without taking too much space
         table_frame.setFixedHeight(465)
 
         self.table = QTableWidget(NUM_ROWS, 3)
-        self.table.setHorizontalHeaderLabels(["ITG No.", "Ele. Name", "Wavelength"])
+        self.table.setHorizontalHeaderLabels(
+            ["ITG No.", "Ele. Name", "Wavelength"]
+        )
 
-        # Excel-style table styling
         self.table.setStyleSheet(
             "QTableWidget{"
             "background:white;"
@@ -135,10 +145,10 @@ class MasterElementsPage(QWidget):
             "}"
         )
 
-        # Column widths – fixed, no resizing
-        self.table.setColumnWidth(0, 80)   # ITG No.
-        self.table.setColumnWidth(1, 100)  # Ele. Name
-        self.table.setColumnWidth(2, 100)  # Wavelength
+        # Column widths
+        self.table.setColumnWidth(0, 80)
+        self.table.setColumnWidth(1, 100)
+        self.table.setColumnWidth(2, 100)
 
         # Disable column resizing
         header = self.table.horizontalHeader()
@@ -147,39 +157,50 @@ class MasterElementsPage(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
 
         self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
         self.table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.SelectedClicked |
             QAbstractItemView.EditTrigger.EditKeyPressed
         )
 
-        # Row height - 27px consistent
         self.table.verticalHeader().setDefaultSectionSize(27)
-        # Enable vertical scrollbar (it will appear when needed)
-        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
 
-        # ── Fill rows with fixed ITG numbers ──────────────────────────
+        # ── Fill rows with fixed ITG numbers ─────────────────────────────
         for row in range(NUM_ROWS):
             itg_no = row + 1
 
-            # ITG No. column (read-only, gray)
+            # ITG No. column: read-only
             itg_item = QTableWidgetItem(str(itg_no))
             itg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            itg_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            itg_item.setFlags(
+                Qt.ItemFlag.ItemIsSelectable |
+                Qt.ItemFlag.ItemIsEnabled
+            )
             itg_item.setBackground(QColor("#e8e8e8"))
             itg_item.setForeground(QColor("black"))
             self.table.setItem(row, 0, itg_item)
 
-            # Ele. Name column (editable)
+            # Ele. Name column: editable
             name_item = QTableWidgetItem("")
-            name_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            name_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignLeft |
+                Qt.AlignmentFlag.AlignVCenter
+            )
             name_item.setForeground(QColor("black"))
             self.table.setItem(row, 1, name_item)
 
-            # Wavelength column (editable)
+            # Wavelength column: editable
             wl_item = QTableWidgetItem("")
-            wl_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            wl_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignLeft |
+                Qt.AlignmentFlag.AlignVCenter
+            )
             wl_item.setForeground(QColor("black"))
             self.table.setItem(row, 2, wl_item)
 
@@ -231,58 +252,83 @@ class MasterElementsPage(QWidget):
         """Load element names and wavelengths from DB into the table."""
         session = get_session()
         try:
-            rows = session.query(MasterElement).order_by(MasterElement.itg_no).all()
-            # Clear existing cells
+            rows = session.query(MasterElement).order_by(
+                MasterElement.itg_no
+            ).all()
+
+            # Clear existing editable cells
             for row in range(NUM_ROWS):
                 self.table.item(row, 1).setText("")
                 self.table.item(row, 2).setText("")
+
             # Fill from DB
             for r in rows:
                 if 1 <= r.itg_no <= NUM_ROWS:
                     row = r.itg_no - 1
                     self.table.item(row, 1).setText(r.ele_name or "")
                     self.table.item(row, 2).setText(r.wavelength or "")
+
         finally:
             session.close()
 
     def _collect(self) -> list:
-        """Collect data from table into a list of dicts."""
+        """Collect data from table into a list of dictionaries."""
         rows = []
+
         for row in range(NUM_ROWS):
             name_item = self.table.item(row, 1)
             wl_item = self.table.item(row, 2)
+
             name = name_item.text().strip() if name_item else ""
             wavelength = wl_item.text().strip() if wl_item else ""
+
             rows.append({
                 "itg_no": row + 1,
                 "ele_name": name,
                 "wavelength": wavelength,
             })
+
         return rows
 
-    def _validate_names(self, rows) -> bool:
-        """Check for duplicate element names (case-insensitive) and empty names."""
-        names = {}
+    def _validate_rows(self, rows) -> bool:
+        """
+        Validate master element rows.
+
+        Empty element names are allowed.
+        Duplicate element names are allowed.
+        Only fixed ITG range and duplicate ITG safety are checked.
+        """
+        seen_itg = set()
+
         for r in rows:
-            name = r["ele_name"].strip()
-            if not name:
+            itg = r.get("itg_no")
+
+            if not isinstance(itg, int):
                 QMessageBox.warning(
                     self,
-                    "Invalid Element Name",
-                    f"ITG {r['itg_no']} has an empty element name.\n\n"
-                    "All elements must have a name."
+                    "Invalid ITG",
+                    "Invalid ITG number found."
                 )
                 return False
-            name_upper = name.upper()
-            if name_upper in names:
+
+            if itg < 1 or itg > NUM_ROWS:
                 QMessageBox.warning(
                     self,
-                    "Duplicate Element Name",
-                    f"Element name '{name}' (ITG {r['itg_no']}) duplicates '{names[name_upper]}'.\n\n"
-                    "All element names must be unique (case-insensitive)."
+                    "Invalid ITG",
+                    f"ITG number {itg} must be between 1 and {NUM_ROWS}."
                 )
                 return False
-            names[name_upper] = f"ITG {r['itg_no']}"
+
+            if itg in seen_itg:
+                QMessageBox.warning(
+                    self,
+                    "Duplicate ITG",
+                    f"Duplicate ITG number {itg} found."
+                )
+                return False
+
+            seen_itg.add(itg)
+
         return True
 
     # =========================================================================
@@ -292,7 +338,7 @@ class MasterElementsPage(QWidget):
     def _on_save(self):
         rows = self._collect()
 
-        if not self._validate_names(rows):
+        if not self._validate_rows(rows):
             return
 
         session = get_session()
@@ -300,84 +346,140 @@ class MasterElementsPage(QWidget):
             # Clear all existing entries
             session.query(MasterElement).delete()
 
-            # Insert all 45 rows (no display_order)
+            # Insert all 45 rows
             for r in rows:
                 session.add(MasterElement(
                     itg_no=r["itg_no"],
                     ele_name=r["ele_name"],
                     wavelength=r["wavelength"],
                 ))
+
             session.commit()
-            QMessageBox.information(self, "Saved",
+
+            QMessageBox.information(
+                self,
+                "Saved",
                 f"Master elements saved successfully.\n"
-                f"{len(rows)} channels configured.")
+                f"{len(rows)} channels configured."
+            )
+
         except Exception as e:
             session.rollback()
             QMessageBox.critical(self, "Save Failed", str(e))
+
         finally:
             session.close()
 
     def _on_export(self):
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Master Elements",
-            "master_elements.json", "JSON Files (*.json)")
+            self,
+            "Export Master Elements",
+            "master_elements.json",
+            "JSON Files (*.json)"
+        )
+
         if not path:
             return
+
         try:
             with open(path, "w") as f:
-                json.dump({"master_elements": self._collect()}, f, indent=2)
-            QMessageBox.information(self, "Exported",
-                f"Master elements exported to:\n{path}")
+                json.dump(
+                    {"master_elements": self._collect()},
+                    f,
+                    indent=2
+                )
+
+            QMessageBox.information(
+                self,
+                "Exported",
+                f"Master elements exported to:\n{path}"
+            )
+
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
     def _on_import(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import Master Elements", "",
-            "JSON Files (*.json)")
+            self,
+            "Import Master Elements",
+            "",
+            "JSON Files (*.json)"
+        )
+
         if not path:
             return
+
         try:
             with open(path, "r") as f:
                 data = json.load(f)
+
             rows = data.get("master_elements", [])
+
             if not rows:
-                QMessageBox.warning(self, "Import Failed",
-                    "No master_elements found in file.")
+                QMessageBox.warning(
+                    self,
+                    "Import Failed",
+                    "No master_elements found in file."
+                )
                 return
 
-            # Validate and apply
             itg_map = {}
+
             for r in rows:
                 try:
                     itg = int(r.get("itg_no", 0))
                 except (ValueError, TypeError):
                     itg = 0
+
                 if itg < 1 or itg > NUM_ROWS:
-                    QMessageBox.warning(self, "Import Failed",
-                        f"Invalid ITG No. '{itg}' – must be between 1 and {NUM_ROWS}.")
+                    QMessageBox.warning(
+                        self,
+                        "Import Failed",
+                        f"Invalid ITG No. '{itg}' – must be between 1 and {NUM_ROWS}."
+                    )
                     return
-                name = r.get("ele_name", "").strip()
-                if not name:
-                    QMessageBox.warning(self, "Import Failed",
-                        f"ITG {itg} has empty element name in file.")
+
+                if itg in itg_map:
+                    QMessageBox.warning(
+                        self,
+                        "Import Failed",
+                        f"Duplicate ITG No. '{itg}' found in import file."
+                    )
                     return
-                # Check duplicate names in import file
-                if name.upper() in [v[0].upper() for v in itg_map.values()]:
-                    QMessageBox.warning(self, "Import Failed",
-                        f"Duplicate element name '{name}' in import file.")
-                    return
-                wavelength = r.get("wavelength", "").strip()
+
+                name = r.get("ele_name", "")
+                wavelength = r.get("wavelength", "")
+
+                if name is None:
+                    name = ""
+                if wavelength is None:
+                    wavelength = ""
+
+                name = str(name).strip()
+                wavelength = str(wavelength).strip()
+
+                # Empty names are allowed.
+                # Duplicate names are allowed.
                 itg_map[itg] = (name, wavelength)
 
-            # Apply to table
-            for itg, (name, wl) in itg_map.items():
+            # Clear all editable cells first
+            for row in range(NUM_ROWS):
+                self.table.item(row, 1).setText("")
+                self.table.item(row, 2).setText("")
+
+            # Apply imported rows
+            for itg, (name, wavelength) in itg_map.items():
                 row = itg - 1
                 self.table.item(row, 1).setText(name)
-                self.table.item(row, 2).setText(wl)
+                self.table.item(row, 2).setText(wavelength)
 
-            QMessageBox.information(self, "Imported",
-                f"Imported {len(itg_map)} element entries.")
+            QMessageBox.information(
+                self,
+                "Imported",
+                f"Imported {len(itg_map)} element entries.\n\n"
+                "Click Save to store them in the database."
+            )
+
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
 
