@@ -1,42 +1,63 @@
 """
 SpectraSoft — Analysis Worker (Job 5 Only)
 ============================================
+
 Runs ONLY Job 5: INT.1 (Raw Intensity) in a background thread.
 
 This is the "sanity check" job used to verify:
 - Hardware connection is working
-- Spark is stable
-- Sensors are receiving light
-- ATT values are in correct range (0.5-0.6)
+- Spark sequence is executed
+- ATT values are programmed
+- ADC/intensity values are displayed
 
-It does NOT apply any corrections (drift, working curve, matrix, master, purity).
-It DOES apply:
-  - Internal Standard ratio (if configured on Page 3)
-  - Normalization to 0.0-1.0 scale or percentage
+Important development mode:
+- The MCU is still connected.
+- Real UART commands are still sent.
+- Real MCU sequence still runs.
+- If SIMULATION_FROM_CSV = True, the final ADC/intensity data displayed
+  in Job 5 is taken from CSV instead of the MCU ADC result.
 
-Singleton UART Manager:
-  - UARTManager is a singleton (via __new__). The first call to UARTManager()
-    creates the connection; subsequent calls reuse the same instance.
-  - This prevents multiple attempts to open the same COM port.
+This is useful when the MCU is connected but the main spectrometer machine
+is not connected yet, causing MCU ADC readings to be 0.
 """
 
 from PyQt6.QtCore import QThread, pyqtSignal
+
 from core.uart_manager import UARTManager
 from core.sequence_engine import SequenceEngine
 from core.attenuator_programmer import AttenuatorProgrammer
 from core.database import get_session
 from core.models import AnalyticalGroup
 
+import csv
+import os
+
+
+# ============================================================================
+# Job 5 Simulation Settings
+# ============================================================================
+
+# True:
+#   MCU still receives all commands, but displayed data comes from CSV.
+#
+# False:
+#   Displayed data comes from actual MCU ADC readings.
+SIMULATION_FROM_CSV = True
+
+# CSV file path.
+# If relative, it is resolved from the project root.
+SIMULATION_CSV_PATH = "job5_simulation.csv"
+
 
 class AnalysisWorker(QThread):
     """
-    Background worker for Job 5: INT.1 (Raw Intensity).
+    Background worker for Job 5: INT.1 Raw Intensity.
 
     Signals:
-        progress(str, int): Status message and progress percentage (0-100).
-        result(dict): The raw intensity results.
-        error(str): Error message if something fails.
-        finished(): Emitted when the worker finishes.
+        progress(str, int): Status message and progress percentage.
+        result(dict): Raw/intensity result payload.
+        error(str): Error message.
+        finished(): Emitted when worker finishes.
     """
 
     progress = pyqtSignal(str, int)
@@ -45,14 +66,11 @@ class AnalysisWorker(QThread):
     finished = pyqtSignal()
 
     def __init__(self, group_id: int, params: dict = None):
-        """
-        Args:
-            group_id: Analytical Group ID.
-            params: Job parameters (e.g., sample_name).
-        """
         super().__init__()
+
         self.group_id = group_id
         self.params = params or {}
+
         self._abort = False
         self._group_data = None
 
@@ -60,15 +78,28 @@ class AnalysisWorker(QThread):
         """Request to abort the running analysis."""
         self._abort = True
 
+    # =========================================================================
+    # Main Worker Flow
+    # =========================================================================
+
     def run(self):
         """
-        Main thread entry point.
-        Executes Job 5: INT.1 (Raw Intensity).
+        Executes Job 5: INT.1 Raw Intensity.
+
+        Flow:
+        1. Load group data
+        2. Connect to MCU
+        3. Program ATT values
+        4. Run real MCU sequence
+        5. If simulation enabled, replace ADC/intensity data from CSV
+        6. Emit result to Job5RunPage
         """
         try:
-            # ── Step 1: Load group data from database ──────────────────
+            # ── Step 1: Load group data ─────────────────────────────────
             self.progress.emit("Loading group data...", 5)
+
             self._group_data = self._load_group_data()
+
             if self._group_data is None:
                 self.error.emit(f"Group {self.group_id} not found.")
                 return
@@ -77,14 +108,15 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 2: Get shared UART connection (singleton) ────────
-            # UARTManager is a singleton; calling UARTManager() returns
-            # the same instance across the whole application.
+            # ── Step 2: Connect to hardware lazily ──────────────────────
             self.progress.emit("Connecting to hardware...", 10)
-            uart = UARTManager()   # Singleton – reuses connection if already open
 
-            # Check if connection was successful
-            if not uart.is_connected:
+            uart = UARTManager()
+
+            # Important:
+            # This connects only when Start is pressed.
+            # If already connected, UARTManager.connect() reuses the open port.
+            if not uart.connect():
                 self.error.emit(
                     "Failed to connect to hardware.\n"
                     "Check that the CH340 adapter is plugged in and the MCU is powered."
@@ -95,25 +127,26 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 3: Program attenuator (ATT) values ───────────────
-            # This is ALWAYS done before any burn. The ATT values are
-            # stored on Page 2 and set the gain for each PMT channel.
+            # ── Step 3: Program attenuators every burn ──────────────────
             self.progress.emit("Programming attenuators...", 15)
+
             att_rows = self._group_data.get("page_02_attenuator", {}).get("rows", [])
+
             programmer = AttenuatorProgrammer(uart)
             prog_count = programmer.program_all(att_rows)
-            print(f"  Programmed {prog_count} attenuators")
+
+            print(f"[JOB5] Programmed {prog_count} attenuators", flush=True)
 
             if self._abort:
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 4: Execute the burn sequence ──────────────────────
-            # This runs the full hardware sequence:
-            #   Reset → Purge → Prespark → Integration → Read ADC → Clean
+            # ── Step 4: Execute real MCU burn sequence ──────────────────
             self.progress.emit("Running burn sequence...", 20)
+
             sequence = SequenceEngine(uart)
-            raw_adc = sequence.execute_full_sequence(
+
+            raw_adc_from_mcu = sequence.execute_full_sequence(
                 page1_data=self._group_data.get("page_01_source", {}),
                 page3_data=self._group_data.get("page_03_channel", []),
                 progress_cb=lambda s, p: self.progress.emit(s, p)
@@ -123,111 +156,327 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 5: Apply Internal Standard (ISE) ratio ────────────
-            # If ISE is configured on Page 3, the software calculates
-            # the relative intensity: (Element / ISE) × 100
-            # If no ISE is configured, it shows normalized ADC (0.0-1.0).
-            self.progress.emit("Processing intensities...", 85)
-            results = self._apply_ise_ratio(raw_adc)
+            # ── Step 5: Decide real ADC or CSV simulation output ────────
+            if SIMULATION_FROM_CSV:
+                self.progress.emit("Using CSV simulation data...", 82)
 
-            # ── Step 6: Emit results ─────────────────────────────────────
+                simulated_intensities = self._load_simulated_intensities_from_csv()
+
+                # Keep approximate raw_adc as well for reporting/debugging.
+                # The UI displays intensities.
+                raw_adc = self._make_raw_adc_from_display_values(simulated_intensities)
+                results = simulated_intensities
+
+                overflows = self._check_intensity_overflows(results)
+
+                print("[JOB5] MCU raw ADC was read but display data was replaced by CSV.", flush=True)
+                print(f"[JOB5] MCU raw ADC: {raw_adc_from_mcu}", flush=True)
+                print(f"[JOB5] CSV intensities: {results}", flush=True)
+
+            else:
+                self.progress.emit("Processing intensities...", 85)
+
+                raw_adc = raw_adc_from_mcu
+                results = self._apply_ise_ratio(raw_adc)
+
+                overflows = self._check_raw_adc_overflows(raw_adc)
+
+            # ── Step 6: Emit result ─────────────────────────────────────
             self.progress.emit("Done!", 100)
+
             self.result.emit({
                 "type": "INT.1",
                 "sample": self.params.get("sample_name", "Unknown"),
-                "raw_adc": raw_adc,          # Raw ADC counts (0-4095)
-                "intensities": results,       # Normalized or relative values
-                "overflows": self._check_overflows(results),
+                "raw_adc": raw_adc,
+                "intensities": results,
+                "overflows": overflows,
+                "simulation": SIMULATION_FROM_CSV,
             })
 
         except Exception as e:
             self.error.emit(str(e))
+
         finally:
             self.finished.emit()
 
     # =========================================================================
-    # Helper Methods
+    # Database
     # =========================================================================
 
     def _load_group_data(self) -> dict:
         """Load all page data for the group from the database."""
         session = get_session()
+
         try:
             group = session.get(AnalyticalGroup, self.group_id)
+
             if not group:
                 return None
+
             return {
-                "page_01_source": group.page_01_source,        # Corrected name
+                "page_01_source": group.page_01_source,
                 "page_02_attenuator": group.page_02_attenuator,
                 "page_03_channel": group.page_03_channel,
-                # Other pages are not needed for Job 5 (no corrections).
             }
+
         finally:
             session.close()
 
-    def _apply_ise_ratio(self, raw_adc: dict) -> dict:
+    # =========================================================================
+    # CSV Simulation
+    # =========================================================================
+
+    def _resolve_simulation_csv_path(self) -> str:
         """
-        Apply Internal Standard (ISE) ratio if configured on Page 3.
+        Resolve simulation CSV path.
 
-        Two modes:
-          1. ISE = 0 (no reference): Normalized ADC (value / 4095)
-          2. ISE > 0 (reference ITG): Relative Intensity = (Element / ISE) × 100
-
-        Args:
-            raw_adc: Dict of {element_name: raw_adc_value}
-
-        Returns:
-            Dict of {element_name: processed_value}
+        Relative path is resolved from the project root.
         """
-        page3_data = self._group_data.get("page_03_channel", [])
+        if os.path.isabs(SIMULATION_CSV_PATH):
+            return SIMULATION_CSV_PATH
 
-        # Build mapping: element_name -> ise_ref (ITG number)
-        ise_map = {}
-        itg_to_elem = {}
-        for elem in page3_data:
-            name = elem.get("ele", "")
-            itg = int(elem.get("itg", 0))
-            ise_ref = elem.get("ise_ref", 0)
-            ise_map[name] = ise_ref
-            itg_to_elem[itg] = name
+        # core/analysis_worker.py -> project root is one level above core
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        return os.path.join(project_root, SIMULATION_CSV_PATH)
+
+    def _load_simulated_intensities_from_csv(self) -> dict:
+        """
+        Load fake/display intensities from CSV.
+
+        Expected format:
+            Element,SampleName
+            FE,0.552
+            C,0.481
+            SI,0.526
+
+        Behavior:
+        - First column must contain element/display name.
+        - If the current sample name exists as a column header, that column is used.
+        - Otherwise, the second column is used.
+        - These values are reused for every burn N=1, N=2, N=3...
+        """
+        path = self._resolve_simulation_csv_path()
+
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Simulation CSV not found:\n{path}\n\n"
+                "Create job5_simulation.csv in the project root or set SIMULATION_FROM_CSV=False."
+            )
+
+        sample_name = self.params.get("sample_name", "").strip()
+
+        with open(path, "r", newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+
+        if not rows:
+            raise ValueError("Simulation CSV is empty.")
+
+        header = [h.strip() for h in rows[0]]
+
+        if len(header) < 2:
+            raise ValueError(
+                "Simulation CSV must have at least two columns:\n"
+                "Element,<SampleName>"
+            )
+
+        # Default: use second column.
+        value_col_index = 1
+
+        # If sample name exists as a column, use it.
+        if sample_name and sample_name in header:
+            value_col_index = header.index(sample_name)
 
         results = {}
-        for name, adc_value in raw_adc.items():
-            ise_ref = ise_map.get(name, 0)
 
-            if ise_ref > 0:
-                # Mode 2: Relative Intensity (% of ISE)
-                # Find the reference element name from its ITG number.
-                ref_name = itg_to_elem.get(ise_ref)
-                if ref_name and ref_name in raw_adc:
-                    ref_adc = raw_adc[ref_name]
-                    if ref_adc > 0:
-                        # Relative Intensity = (Element / ISE) × 100
-                        results[name] = (adc_value / ref_adc) * 100
-                    else:
-                        results[name] = 0.0
-                else:
-                    # Fallback: normalized ADC if reference not found.
-                    results[name] = adc_value / 4095
-            else:
-                # Mode 1: Normalized ADC (0.0-1.0 scale)
-                # 4095 is the maximum 12-bit ADC value.
-                results[name] = adc_value / 4095
+        for row in rows[1:]:
+            if not row or len(row) <= value_col_index:
+                continue
+
+            element = row[0].strip()
+
+            if not element:
+                continue
+
+            value_text = row[value_col_index].strip()
+
+            if value_text == "":
+                continue
+
+            try:
+                value = float(value_text)
+            except ValueError:
+                raise ValueError(
+                    f"Invalid numeric value in simulation CSV:\n"
+                    f"Element: {element}\n"
+                    f"Value: {value_text}"
+                )
+
+            results[element] = value
+
+        if not results:
+            raise ValueError(
+                "No valid simulation values found in CSV.\n"
+                "Check that the first column contains element names and the second column contains values."
+            )
 
         return results
 
-    def _check_overflows(self, intensities: dict) -> list:
+    def _make_raw_adc_from_display_values(self, values: dict) -> dict:
         """
-        Check for overflow values (>0.8) in the intensity results.
+        Make approximate raw ADC values from display values.
 
-        In the Shimadzu system, 0.8 is the functional overflow limit.
-        Values above 0.8 indicate the PMT signal is saturating.
+        If value is 0.0 to 1.0:
+            Treat as normalized intensity and convert to ADC counts.
 
-        Returns:
-            List of element names that are overflowing.
+        If value is greater than 1.0:
+            Treat as already ADC-like and clamp to 0-4095.
+
+        This is mainly for reporting/debugging while CSV simulation is enabled.
+        """
+        raw_adc = {}
+
+        for name, value in values.items():
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                v = 0.0
+
+            if 0.0 <= v <= 1.0:
+                adc = int(round(v * 4095))
+            else:
+                adc = int(round(v))
+
+            adc = max(0, min(4095, adc))
+            raw_adc[name] = adc
+
+        return raw_adc
+
+    # =========================================================================
+    # Processing
+    # =========================================================================
+
+    def _display_key_for_page3_entry(self, entry: dict) -> str:
+        """
+        Build the same display key used by Job5RunPage.
+
+        Preference:
+        1. Page 3 NAME
+        2. Page 3 ELE
+        3. ITG fallback
+        """
+        name = str(entry.get("name", "")).strip()
+        ele = str(entry.get("ele", "")).strip()
+        itg = str(entry.get("itg", "")).strip()
+
+        return name or ele or (f"ITG{itg}" if itg else "")
+
+    def _apply_ise_ratio(self, raw_adc: dict) -> dict:
+        """
+        Apply Internal Standard ratio if configured on Page 3.
+
+        Modes:
+        1. ISE = 0:
+            normalized intensity = ADC / 4095
+
+        2. ISE > 0:
+            relative intensity = element ADC / reference ADC * 100
+        """
+        page3_data = self._group_data.get("page_03_channel", []) or []
+
+        ise_map = {}
+        itg_to_key = {}
+
+        for entry in page3_data:
+            key = self._display_key_for_page3_entry(entry)
+
+            if not key:
+                continue
+
+            try:
+                itg = int(entry.get("itg", 0))
+            except (TypeError, ValueError):
+                itg = 0
+
+            try:
+                ise_ref = int(entry.get("ise_ref", 0))
+            except (TypeError, ValueError):
+                ise_ref = 0
+
+            ise_map[key] = ise_ref
+            itg_to_key[itg] = key
+
+        results = {}
+
+        for key, adc_value in raw_adc.items():
+            try:
+                adc_value = float(adc_value)
+            except (TypeError, ValueError):
+                adc_value = 0.0
+
+            ise_ref = ise_map.get(key, 0)
+
+            if ise_ref > 0:
+                ref_key = itg_to_key.get(ise_ref)
+
+                if ref_key and ref_key in raw_adc:
+                    try:
+                        ref_adc = float(raw_adc[ref_key])
+                    except (TypeError, ValueError):
+                        ref_adc = 0.0
+
+                    if ref_adc > 0:
+                        results[key] = (adc_value / ref_adc) * 100.0
+                    else:
+                        results[key] = 0.0
+                else:
+                    results[key] = adc_value / 4095.0
+
+            else:
+                results[key] = adc_value / 4095.0
+
+        return results
+
+    # =========================================================================
+    # Overflow Checks
+    # =========================================================================
+
+    def _check_raw_adc_overflows(self, raw_adc: dict) -> list:
+        """
+        Check overflow using raw ADC.
+
+        0.8 of 4095 is the functional overflow threshold.
         """
         overflows = []
-        for name, value in intensities.items():
-            if value > 0.8:
+        overflow_limit = int(0.8 * 4095)
+
+        for name, value in raw_adc.items():
+            try:
+                adc = int(value)
+            except (TypeError, ValueError):
+                adc = 0
+
+            if adc >= overflow_limit:
                 overflows.append(name)
+
+        return overflows
+
+    def _check_intensity_overflows(self, intensities: dict) -> list:
+        """
+        Check overflow using displayed intensity values.
+
+        Used mainly for CSV simulation where values are already display values.
+        """
+        overflows = []
+
+        for name, value in intensities.items():
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                v = 0.0
+
+            if v > 0.8:
+                overflows.append(name)
+
         return overflows

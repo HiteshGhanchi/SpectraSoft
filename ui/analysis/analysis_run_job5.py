@@ -1,19 +1,31 @@
 """
-SpectraSoft — Job 5: INT.1 (Raw Intensity)
+SpectraSoft — Job 5: INT.1 Raw Intensity
 
 This page is dedicated to Job 5 only.
-It shows raw intensity (normalized or relative) with multi-burn support.
-Columns: Element, AVE, N=1, N=2, ..., R, S.D., C.V.
+
+It shows raw intensity, normalized intensity, or relative intensity
+with multi-burn support.
+
+Columns:
+- Element
+- AVE
+- N=1, N=2, ...
+
+Notes:
+- HV control is intentionally not implemented here because no confirmed
+  hardware HV command/mapping exists.
+- Hardware connection is handled by AnalysisWorker when Start is pressed.
+- This page is UI-only. It does not directly communicate with UART/MCU.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QMessageBox, QLineEdit,
     QProgressBar, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QFileDialog
+    QAbstractItemView, QFileDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QDate
-from PyQt6.QtGui import QColor, QTextDocument, QPageLayout
+from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis_worker import AnalysisWorker
@@ -21,27 +33,31 @@ from core.database import get_session
 from core.models import AnalyticalGroup
 
 import csv
-import math
 
 
 class Job5RunPage(QWidget):
-    """Job 5: Raw Intensity analysis page."""
+    """Job 5: INT.1 Raw Intensity analysis page."""
 
     def __init__(self, main_window, group_id: int, group_name: str, job_type: str):
         super().__init__()
+
         self.main_window = main_window
         self.group_id = group_id
         self.group_name = group_name
-        self.job_type = job_type   # Should be '5'
+        self.job_type = job_type
 
         self.worker = None
-        self.results = []          # list of dict: each burn result {element: intensity}
-        self.element_names = []
-        self.is_running = False
 
-        # Counters for status footer
-        self.an_count = 0          # Analysis number since last waste discharge
-        self.tan_count = 0         # Total number of emission times
+        # Each item in self.results is one burn:
+        # {"FE": 0.512, "C": 0.431, ...}
+        self.results = []
+
+        # Display names loaded from Page 3
+        self.element_names = []
+
+        # Counters for footer
+        self.an_count = 0
+        self.tan_count = 0
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -66,27 +82,15 @@ class Job5RunPage(QWidget):
         title_bar = QWidget()
         title_bar.setFixedHeight(24)
         title_bar.setStyleSheet("background:#5c9bd5;")
+
         title_layout = QHBoxLayout(title_bar)
         title_layout.setContentsMargins(12, 0, 12, 0)
 
-        self.title_label = QLabel(f"Job 5: Raw Intensity - {self.group_name}")
+        self.title_label = QLabel(f"Job 5: INT.1 Raw Intensity - {self.group_name}")
         self.title_label.setStyleSheet("color:white;font:bold 10pt Arial;")
+
         title_layout.addWidget(self.title_label)
         title_layout.addStretch()
-
-        self.hv_btn = QPushButton("HV: OFF")
-        self.hv_btn.setStyleSheet(
-            "QPushButton{"
-            "background:#dc3545;"
-            "color:white;"
-            "border:2px outset #888888;"
-            "font:9pt Arial;"
-            "padding:2px 8px;"
-            "}"
-        )
-        self.hv_btn.setFixedWidth(80)
-        self.hv_btn.clicked.connect(self._toggle_hv)
-        title_layout.addWidget(self.hv_btn)
 
         root.addWidget(title_bar)
 
@@ -96,19 +100,21 @@ class Job5RunPage(QWidget):
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
         outer.setStyleSheet("background:white;")
+
         root.addWidget(outer, stretch=1)
 
-        ol = QVBoxLayout(outer)
-        ol.setContentsMargins(10, 10, 10, 10)
-        ol.setSpacing(6)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(10, 10, 10, 10)
+        outer_layout.setSpacing(6)
 
-        # ── Job Parameters Area (Sample Name) ────────────────────────────
+        # ── Job Parameters Area ───────────────────────────────────────────
         self.params_area = QWidget()
         self.params_area.setFixedHeight(40)
-        ol.addWidget(self.params_area)
+        outer_layout.addWidget(self.params_area)
 
         # ── Progress Bar ─────────────────────────────────────────────────
         self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
         self.progress_bar.setStyleSheet(
             "QProgressBar{"
             "background:#f0f0f0;"
@@ -120,11 +126,10 @@ class Job5RunPage(QWidget):
             "background:#0078d7;"
             "}"
         )
-        self.progress_bar.setValue(0)
-        ol.addWidget(self.progress_bar)
+        outer_layout.addWidget(self.progress_bar)
 
         # ── Status Label ─────────────────────────────────────────────────
-        self.status_label = QLabel("Ready. Press F1: Start to begin.")
+        self.status_label = QLabel("Ready. Press Start to begin.")
         self.status_label.setStyleSheet(
             "QLabel{"
             "background:#d4d0c8;"
@@ -134,15 +139,15 @@ class Job5RunPage(QWidget):
             "padding:4px 6px;"
             "}"
         )
-        ol.addWidget(self.status_label)
+        outer_layout.addWidget(self.status_label)
 
-        # ── ST Counter ──────────────────────────────────────────────────
+        # ── ST Counter ───────────────────────────────────────────────────
         self.st_counter = QLabel("ST No.: —")
         self.st_counter.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.st_counter.setStyleSheet("font:bold 9pt Arial; color:#555555;")
-        ol.addWidget(self.st_counter)
+        outer_layout.addWidget(self.st_counter)
 
-        # ── Results Table (with scroll) ────────────────────────────────
+        # ── Results Table ────────────────────────────────────────────────
         self.table = QTableWidget()
         self.table.setStyleSheet(
             "QTableWidget{"
@@ -170,18 +175,22 @@ class Job5RunPage(QWidget):
             "color:black;"
             "}"
         )
+
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setDefaultSectionSize(27)
-        ol.addWidget(self.table, stretch=1)  # Table takes remaining space
 
-        # ── Status Footer ──────────────────────────────────────────────────
+        outer_layout.addWidget(self.table, stretch=1)
+
+        # ── Status Footer ────────────────────────────────────────────────
         footer = QWidget()
         footer.setAutoFillBackground(True)
+
         fbp = footer.palette()
         fbp.setColor(footer.backgroundRole(), Qt.GlobalColor.lightGray)
         footer.setPalette(fbp)
+
         footer.setStyleSheet("background:#d4d0c8; border-top:1px solid #888888;")
         footer.setFixedHeight(28)
 
@@ -197,24 +206,23 @@ class Job5RunPage(QWidget):
         self.tan_label.setStyleSheet("font:9pt Arial; color:black;")
         footer_layout.addWidget(self.tan_label)
 
-        self.hv_status_label = QLabel("HV: OFF")
-        self.hv_status_label.setStyleSheet("font:9pt Arial; color:red;")
-        footer_layout.addWidget(self.hv_status_label)
-
         footer_layout.addStretch()
-        ol.addWidget(footer)
+
+        outer_layout.addWidget(footer)
 
         # ── Bottom Navigation ────────────────────────────────────────────
         btn_bar = QWidget()
         btn_bar.setAutoFillBackground(True)
+
         bbp = btn_bar.palette()
         bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
         btn_bar.setPalette(bbp)
-        btn_bar.setFixedHeight(40)  # Fixed height for buttons
 
-        bbl = QHBoxLayout(btn_bar)
-        bbl.setContentsMargins(0, 4, 0, 4)
-        bbl.setSpacing(4)
+        btn_bar.setFixedHeight(40)
+
+        btn_layout = QHBoxLayout(btn_bar)
+        btn_layout.setContentsMargins(0, 4, 0, 4)
+        btn_layout.setSpacing(4)
 
         btn_style = (
             "QPushButton{"
@@ -223,23 +231,23 @@ class Job5RunPage(QWidget):
             "border:2px outset #aaaaaa;"
             "font:9pt Arial;"
             "padding:4px 12px;"
-            "min-width:60px;"
+            "min-width:70px;"
             "}"
             "QPushButton:pressed{"
             "border:2px inset #888888;"
             "}"
         )
 
-        self.btn_start = QPushButton("F1: Start")
+        self.btn_start = QPushButton("Start")
         self.btn_start.setStyleSheet(btn_style)
         self.btn_start.clicked.connect(self._on_start)
 
-        self.btn_stop = QPushButton("F2: Stop")
+        self.btn_stop = QPushButton("Stop")
         self.btn_stop.setStyleSheet(btn_style)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_stop.setEnabled(False)
 
-        self.btn_print = QPushButton("F4: Print")
+        self.btn_print = QPushButton("Print")
         self.btn_print.setStyleSheet(btn_style)
         self.btn_print.clicked.connect(self._on_print)
 
@@ -247,43 +255,41 @@ class Job5RunPage(QWidget):
         self.btn_export.setStyleSheet(btn_style)
         self.btn_export.clicked.connect(self._on_export)
 
-        self.btn_reset = QPushButton("F7: Reset")
+        self.btn_reset = QPushButton("Reset")
         self.btn_reset.setStyleSheet(btn_style)
         self.btn_reset.clicked.connect(self._on_reset)
 
-        bbl.addWidget(self.btn_start)
-        bbl.addWidget(self.btn_stop)
-        bbl.addWidget(self.btn_print)
-        bbl.addWidget(self.btn_export)
-        bbl.addWidget(self.btn_reset)
-        bbl.addStretch()
+        btn_layout.addWidget(self.btn_start)
+        btn_layout.addWidget(self.btn_stop)
+        btn_layout.addWidget(self.btn_print)
+        btn_layout.addWidget(self.btn_export)
+        btn_layout.addWidget(self.btn_reset)
 
-        canc = QPushButton("9:Cancel")
-        canc.setStyleSheet(btn_style)
-        canc.clicked.connect(self._on_cancel)
-        bbl.addWidget(canc)
+        btn_layout.addStretch()
 
-        ol.addWidget(btn_bar)  # Button bar at the very bottom
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(btn_style)
+        cancel_btn.clicked.connect(self._on_cancel)
+        btn_layout.addWidget(cancel_btn)
+
+        outer_layout.addWidget(btn_bar)
 
     # =========================================================================
     # Job-Specific UI Setup
     # =========================================================================
 
     def _setup_job_ui(self):
-        """Set up job-specific parameters UI (sample name input)."""
-        # Properly clear the params_area
+        """Set up job-specific parameters UI."""
         if self.params_area.layout():
-            # Remove all child widgets
             while self.params_area.layout().count():
                 item = self.params_area.layout().takeAt(0)
                 if item.widget():
                     item.widget().deleteLater()
-            # Delete the layout itself
+
             old_layout = self.params_area.layout()
             if old_layout:
                 old_layout.deleteLater()
 
-        # Create new layout
         layout = QVBoxLayout(self.params_area)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
@@ -297,31 +303,48 @@ class Job5RunPage(QWidget):
 
         self.sample_name = QLineEdit("UNKNOWN-001")
         self.sample_name.setStyleSheet(
-            "QLineEdit{background:white;color:black;border:1px solid #888888;"
-            "font:9pt Arial;padding:2px 4px;}"
+            "QLineEdit{"
+            "background:white;"
+            "color:black;"
+            "border:1px solid #888888;"
+            "font:9pt Arial;"
+            "padding:2px 4px;"
+            "}"
         )
         self.sample_name.setFixedWidth(200)
         row.addWidget(self.sample_name)
 
         row.addStretch()
         layout.addLayout(row)
+
     # =========================================================================
     # Data Loading
     # =========================================================================
 
     def _load_elements(self):
-        """Load element names from Page 3."""
+        """
+        Load element/display names from Page 3.
+
+        Preference:
+        1. Page 3 NAME
+        2. Page 3 ELE
+        3. ITG fallback
+        """
         session = get_session()
         try:
             group = session.get(AnalyticalGroup, self.group_id)
+
             if group and group.page_03_channel:
                 for entry in group.page_03_channel:
-                    ele = entry.get("ele", "")
-                    if ele:
-                        self.element_names.append(ele)
-            if not self.element_names:
-                # No elements defined; user must set up Page 3.
-                self.element_names = []
+                    name = str(entry.get("name", "")).strip()
+                    ele = str(entry.get("ele", "")).strip()
+                    itg = str(entry.get("itg", "")).strip()
+
+                    display_name = name or ele or (f"ITG{itg}" if itg else "")
+
+                    if display_name:
+                        self.element_names.append(display_name)
+
         finally:
             session.close()
 
@@ -330,131 +353,60 @@ class Job5RunPage(QWidget):
     # =========================================================================
 
     def _update_table(self):
-        """Update the results table with all burns and statistics."""
+        """Update the results table with all burns."""
         if not self.element_names:
-            # Show a message or empty table with headers
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
+            self.status_label.setText(
+                "No elements configured. Complete Page 3 before running Job 5."
+            )
             return
 
         num_burns = len(self.results)
-        # Columns: Element, AVE, N=1, N=2, ..., R, SD, CV
-        # Total columns = 1 (Element) + 1 (AVE) + num_burns + 3 (R,SD,CV)
-        num_cols = 2 + num_burns + 3
+
+        # Columns: Element, AVE, N=1, N=2, ...
+        num_cols = 2 + num_burns
 
         self.table.setRowCount(len(self.element_names))
         self.table.setColumnCount(num_cols)
 
         headers = ["Element", "AVE"]
+
         for i in range(num_burns):
-            headers.append(f"N={i+1}")
-        headers.extend(["R", "S.D.", "C.V."])
+            headers.append(f"N={i + 1}")
 
         self.table.setHorizontalHeaderLabels(headers)
 
-        # Set column widths
-        self.table.setColumnWidth(0, 70)
-        self.table.setColumnWidth(1, 70)
-        for i in range(num_burns):
-            self.table.setColumnWidth(2 + i, 70)
-        self.table.setColumnWidth(2 + num_burns, 60)    # R
-        self.table.setColumnWidth(3 + num_burns, 60)    # S.D.
-        self.table.setColumnWidth(4 + num_burns, 60)    # C.V.
+        self.table.setColumnWidth(0, 90)
+        self.table.setColumnWidth(1, 90)
 
-        # Fill data
+        for i in range(num_burns):
+            self.table.setColumnWidth(2 + i, 90)
+
         for row, elem in enumerate(self.element_names):
-            # Element name
             elem_item = QTableWidgetItem(elem)
             elem_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, elem_item)
 
-            # Collect values for this element across burns
             values = []
+
             for burn in self.results:
                 val = burn.get(elem, 0.0)
                 values.append(val)
 
             if values:
-                # Average
                 avg = sum(values) / len(values)
+
                 avg_item = QTableWidgetItem(f"{avg:.3f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
-                # Individual burns
                 for i, val in enumerate(values):
                     val_item = QTableWidgetItem(f"{val:.3f}")
                     val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                     self.table.setItem(row, 2 + i, val_item)
 
-                # R (Range)
-                r_val = max(values) - min(values)
-                r_item = QTableWidgetItem(f"{r_val:.3f}")
-                r_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 2 + num_burns, r_item)
-
-                # S.D. (sample standard deviation)
-                if len(values) > 1:
-                    mean = avg
-                    variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
-                    sd = math.sqrt(variance)
-                else:
-                    sd = 0.0
-                sd_item = QTableWidgetItem(f"{sd:.3f}")
-                sd_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 3 + num_burns, sd_item)
-
-                # C.V. (Coefficient of Variation)
-                if avg != 0:
-                    cv = (sd / avg) * 100
-                else:
-                    cv = 0.0
-                cv_item = QTableWidgetItem(f"{cv:.2f}%")
-                cv_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 4 + num_burns, cv_item)
-
         self.table.resizeRowsToContents()
-
-    # =========================================================================
-    # HV Controls
-    # =========================================================================
-
-    def _toggle_hv(self):
-        self.main_window.toggle_hv()
-        self._update_hv_button()
-        self._update_footer_hv()
-
-    def _update_hv_button(self):
-        if self.main_window.get_hv_status():
-            self.hv_btn.setText("HV: ON")
-            self.hv_btn.setStyleSheet(
-                "QPushButton{"
-                "background:#28a745;"
-                "color:white;"
-                "border:2px outset #888888;"
-                "font:9pt Arial;"
-                "padding:2px 8px;"
-                "}"
-            )
-        else:
-            self.hv_btn.setText("HV: OFF")
-            self.hv_btn.setStyleSheet(
-                "QPushButton{"
-                "background:#dc3545;"
-                "color:white;"
-                "border:2px outset #888888;"
-                "font:9pt Arial;"
-                "padding:2px 8px;"
-                "}"
-            )
-
-    def _update_footer_hv(self):
-        if self.main_window.get_hv_status():
-            self.hv_status_label.setText("HV: ON")
-            self.hv_status_label.setStyleSheet("font:9pt Arial; color:green;")
-        else:
-            self.hv_status_label.setText("HV: OFF")
-            self.hv_status_label.setStyleSheet("font:9pt Arial; color:red;")
 
     def _update_footer_counts(self):
         self.an_label.setText(f"AN: {self.an_count}")
@@ -465,39 +417,44 @@ class Job5RunPage(QWidget):
     # =========================================================================
 
     def _on_start(self):
+        """
+        Start Job 5.
+
+        Hardware connection is handled inside AnalysisWorker.
+        This page does not directly open UART.
+        """
         if self.worker and self.worker.isRunning():
             return
 
-        # Check HV
-        if not self.main_window.get_hv_status():
-            reply = QMessageBox.question(
+        if not self.element_names:
+            QMessageBox.warning(
                 self,
-                "HV is OFF",
-                "PMT power (HV) is OFF. Turn it ON?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                "No Elements",
+                "No elements are configured for this analytical group.\n\n"
+                "Please complete Page 3 before running Job 5."
             )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.main_window.toggle_hv()
-                self._update_hv_button()
-                self._update_footer_hv()
-            else:
-                return
+            return
 
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
+
         self.status_label.setText("Starting analysis...")
         self.progress_bar.setValue(0)
 
-        params = {"sample_name": self.sample_name.text().strip()}
+        params = {
+            "sample_name": self.sample_name.text().strip()
+        }
 
         self.worker = AnalysisWorker(
             group_id=self.group_id,
             params=params
         )
+
         self.worker.progress.connect(self._on_progress)
         self.worker.result.connect(self._on_result)
         self.worker.error.connect(self._on_error)
         self.worker.finished.connect(self._on_finished)
+
         self.worker.start()
 
     def _on_stop(self):
@@ -511,7 +468,18 @@ class Job5RunPage(QWidget):
         self.progress_bar.setValue(percent)
 
     def _on_result(self, results: dict):
-        # Extract the intensity data
+        """
+        Receive processed result from AnalysisWorker.
+
+        Expected result:
+        {
+            "type": "INT.1",
+            "sample": "...",
+            "raw_adc": {...},
+            "intensities": {...},
+            "overflows": [...]
+        }
+        """
         if "intensities" in results:
             data = results["intensities"]
         elif "raw_adc" in results:
@@ -519,23 +487,29 @@ class Job5RunPage(QWidget):
         else:
             data = results
 
-        # Increment counters
         self.an_count += 1
         self.tan_count += 1
         self._update_footer_counts()
 
-        # Store result
         self.results.append(data)
-        self.st_counter.setText(f"ST No.: {len(self.results)}")
 
-        # Update table
+        self.st_counter.setText(f"ST No.: {len(self.results)}")
         self._update_table()
 
-        self.status_label.setText(f"Burn {len(self.results)} complete.")
+        overflows = results.get("overflows", [])
+
+        if overflows:
+            self.status_label.setText(
+                "Burn complete. Overflow detected: " + ", ".join(overflows)
+            )
+        else:
+            self.status_label.setText(f"Burn {len(self.results)} complete.")
+
         self.progress_bar.setValue(100)
 
     def _on_error(self, error_msg: str):
         QMessageBox.critical(self, "Analysis Error", error_msg)
+
         self.status_label.setText(f"Error: {error_msg}")
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -543,6 +517,7 @@ class Job5RunPage(QWidget):
 
     def _on_finished(self):
         self.worker = None
+
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
 
@@ -550,14 +525,15 @@ class Job5RunPage(QWidget):
             self.status_label.setText("Stopped")
 
     def _on_reset(self):
-        """Reset all burns for current sample."""
         if self.results:
             reply = QMessageBox.question(
                 self,
                 "Reset",
                 "Clear all burns for this sample?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes |
+                QMessageBox.StandardButton.No
             )
+
             if reply == QMessageBox.StandardButton.Yes:
                 self.results = []
                 self.st_counter.setText("ST No.: —")
@@ -571,6 +547,7 @@ class Job5RunPage(QWidget):
     def _on_print(self):
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setPageOrientation(QPageLayout.Orientation.Landscape)
+
         preview = QPrintPreviewDialog(printer, self)
         preview.paintRequested.connect(self._render_print_page)
         preview.exec()
@@ -582,29 +559,35 @@ class Job5RunPage(QWidget):
         doc.print(printer)
 
     def _generate_html_report(self) -> str:
-        """Generate HTML report for printing."""
         title = f"SpectraSoft Job 5 Report - {self.group_name}"
         timestamp = QDate.currentDate().toString("dd-MM-yyyy")
-        sample = self.sample_name.text() if hasattr(self, 'sample_name') else "Unknown"
+        sample = self.sample_name.text() if hasattr(self, "sample_name") else "Unknown"
 
-        # Build table rows
         rows = []
+
         if self.table.rowCount() > 0 and self.table.columnCount() > 0:
             for row in range(self.table.rowCount()):
                 row_html = "<tr>"
+
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row, col)
                     val = item.text() if item else ""
                     row_html += f"<td>{val}</td>"
+
                 row_html += "</tr>"
                 rows.append(row_html)
+
+        header_html = ""
+
+        for i in range(self.table.columnCount()):
+            header_item = self.table.horizontalHeaderItem(i)
+            header_text = header_item.text() if header_item else ""
+            header_html += f"<th>{header_text}</th>"
 
         table_html = f"""
         <table border="1" cellpadding="5" cellspacing="0">
             <thead>
-                <tr>
-                    {''.join(f'<th>{self.table.horizontalHeaderItem(i).text()}</th>' for i in range(self.table.columnCount()))}
-                </tr>
+                <tr>{header_html}</tr>
             </thead>
             <tbody>
                 {''.join(rows)}
@@ -627,13 +610,20 @@ class Job5RunPage(QWidget):
         </head>
         <body>
             <h1>{title}</h1>
+
             <table class="meta">
-                <tr><td><b>Sample:</b> {sample}</td>
-                    <td><b>Date:</b> {timestamp}</td></tr>
-                <tr><td><b>Job:</b> 5 (INT.1)</td>
-                    <td><b>Burns:</b> {len(self.results)}</td></tr>
+                <tr>
+                    <td><b>Sample:</b> {sample}</td>
+                    <td><b>Date:</b> {timestamp}</td>
+                </tr>
+                <tr>
+                    <td><b>Job:</b> 5 / INT.1 Raw Intensity</td>
+                    <td><b>Burns:</b> {len(self.results)}</td>
+                </tr>
             </table>
+
             {table_html}
+
             <p style="margin-top:20px;font-size:9pt;color:#666;">
                 Generated by SpectraSoft
             </p>
@@ -651,33 +641,42 @@ class Job5RunPage(QWidget):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Analysis Results", "analysis_results.csv",
+            self,
+            "Export Analysis Results",
+            "analysis_results.csv",
             "CSV Files (*.csv)"
         )
+
         if not path:
             return
 
         try:
-            with open(path, 'w', newline='') as f:
+            with open(path, "w", newline="") as f:
                 writer = csv.writer(f)
 
-                # Header
-                headers = ["Element"]
-                for i in range(len(self.results)):
-                    headers.append(f"N={i+1}")
-                headers.extend(["AVE", "R", "S.D.", "C.V."])
+                headers = []
+
+                for col in range(self.table.columnCount()):
+                    header_item = self.table.horizontalHeaderItem(col)
+                    headers.append(header_item.text() if header_item else "")
+
                 writer.writerow(headers)
 
-                # Data
                 for row in range(self.table.rowCount()):
                     row_data = []
+
                     for col in range(self.table.columnCount()):
                         item = self.table.item(row, col)
                         row_data.append(item.text() if item else "")
+
                     writer.writerow(row_data)
 
-            QMessageBox.information(self, "Exported",
-                f"Results exported to:\n{path}")
+            QMessageBox.information(
+                self,
+                "Exported",
+                f"Results exported to:\n{path}"
+            )
+
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
@@ -691,8 +690,10 @@ class Job5RunPage(QWidget):
                 self,
                 "Cancel Analysis",
                 "Analysis is still running. Stop and cancel?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QMessageBox.StandardButton.Yes |
+                QMessageBox.StandardButton.No
             )
+
             if reply == QMessageBox.StandardButton.Yes:
                 self.worker.stop()
                 QTimer.singleShot(500, self._go_back)
