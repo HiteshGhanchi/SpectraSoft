@@ -1,54 +1,89 @@
 """
 SpectraSoft — Page 8: Display & Print Format
 
-This page defines how analysis results are displayed on screen and printed.
+Manual-style Page 8 table:
 
-Columns (one row per element from Page 3):
-- ELE: Element name (read‑only, from Page 3)
-- NAME: Custom name (read‑only, from Page 3)
-- ORDER: Display order (1 = first)
-- FIG: Total number of characters (including decimal)
-- DECI: Number of decimal places
-- MAGN: Magnification (10^MAGN multiplier)
+AR-No. | NAME | ORDER | FIG | DECI | MAGN
 
-Rules:
-- ORDER = 0 means element is not displayed/printed
-- FIG must be between 1 and 6
-- DECI must be less than FIG
-- MAGN = 0 means no magnification
+Purpose:
+- Controls display and print order for analytical results.
+- Controls numeric formatting for final content analysis display/reporting.
 
-Saved JSON example:
-{
-    "display_order": [
-        {"element": "C", "name": "C", "order": 1, "fig": 4, "deci": 2, "magn": 0},
-        {"element": "SI", "name": "Si", "order": 2, "fig": 4, "deci": 2, "magn": 0},
-        ...
-    ]
-}
+Column meaning:
+- ORDER:
+    Display/print sequence.
+    0 = not configured / not printed in old software.
+    In this modern app, Job X may use fallback:
+        if all ORDER values are 0, display all elements in Page 3 order.
+        if any ORDER values are > 0, display only ORDER > 0 sorted by ORDER.
+
+- FIG:
+    Total display/print character width.
+    Mostly useful for old fixed-width printers.
+    Stored for compatibility.
+
+- DECI:
+    Number of decimal places.
+    0 = floating/default formatting in old software.
+    In this modern app, 0 may be interpreted as default precision.
+
+- MAGN:
+    Power-of-10 display multiplier.
+    Example:
+        actual value = 0.0021
+        MAGN = 4
+        displayed value = 21.0
+
+Defaults:
+    ORDER = 0
+    FIG   = 0
+    DECI  = 0
+    MAGN  = 0
+
+Saved to:
+    AnalyticalGroup.page_08_display
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QScrollArea, QMessageBox,
+    QPushButton, QFrame, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QLineEdit, QComboBox
+    QAbstractItemView
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QIntValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
 
-MAX_ELEMENTS = 32
 
+class DisplayOrderPage(QWidget):
+    """
+    Page 8: Analytical Element Display and Printing Order.
+    """
 
-class DisplayPage(QWidget):
+    COL_AR = 0
+    COL_NAME = 1
+    COL_ORDER = 2
+    COL_FIG = 3
+    COL_DECI = 4
+    COL_MAGN = 5
+
+    HEADERS = [
+        "AR-No.",
+        "NAME",
+        "ORDER",
+        "FIG",
+        "DECI",
+        "MAGN",
+    ]
 
     def __init__(self, main_window, group_id: int, group_name: str):
         super().__init__()
+
         self.main_window = main_window
         self.group_id = group_id
         self.group_name = group_name
+        self._updating_table = False
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -59,7 +94,7 @@ class DisplayPage(QWidget):
         self._load()
 
     # =========================================================================
-    # UI Construction
+    # UI
     # =========================================================================
 
     def _build_ui(self):
@@ -68,7 +103,7 @@ class DisplayPage(QWidget):
         root.setSpacing(0)
 
         # ── Title Bar ──────────────────────────────────────────────────────
-        bar = QLabel(f"Display Format - {self.group_name}")
+        bar = QLabel(f"Display & Print Format - {self.group_name}")
         bar.setFixedHeight(24)
         bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -84,30 +119,16 @@ class DisplayPage(QWidget):
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet("background:#d4d0c8;")
         root.addWidget(outer, stretch=1)
 
-        ol = QVBoxLayout(outer)
-        ol.setContentsMargins(0, 0, 0, 0)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(14, 14, 14, 10)
+        outer_layout.setSpacing(8)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border:none;")
-        ol.addWidget(scroll)
-
-        inner = QWidget()
-        inner.setAutoFillBackground(True)
-        ip = inner.palette()
-        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
-        inner.setPalette(ip)
-        scroll.setWidget(inner)
-
-        ml = QVBoxLayout(inner)
-        ml.setContentsMargins(20, 16, 20, 12)
-        ml.setSpacing(8)
-
-        # ── Table Title ──────────────────────────────────────────────────
-        title = QLabel("DISPLAY & PRINT FORMAT")
+        # ── Page Title ───────────────────────────────────────────────────
+        title = QLabel("ANALYTICAL ELEMENT DISPLAY AND PRINTING ORDER")
+        title.setFixedHeight(24)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
             "QLabel{"
@@ -118,15 +139,16 @@ class DisplayPage(QWidget):
             "padding:3px 0px;"
             "}"
         )
-        ml.addWidget(title)
+        outer_layout.addWidget(title)
 
-        # ── Info Text ────────────────────────────────────────────────────
-        info = QLabel(
-            "ORDER = Display order (1=first, 0=hidden)\n"
-            "FIG = Total characters | DECI = Decimal places | MAGN = ×10^MAGN multiplier"
+        # ── Help Note ────────────────────────────────────────────────────
+        note = QLabel(
+            "ORDER controls report sequence. FIG is display width. DECI is decimal places. "
+            "MAGN applies 10^MAGN display scaling. Defaults are all 0."
         )
-        info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        info.setStyleSheet(
+        note.setFixedHeight(38)
+        note.setWordWrap(True)
+        note.setStyleSheet(
             "QLabel{"
             "background:#f0ece4;"
             "color:#555555;"
@@ -135,94 +157,14 @@ class DisplayPage(QWidget):
             "padding:4px 6px;"
             "}"
         )
-        ml.addWidget(info)
+        outer_layout.addWidget(note)
 
-        # ── Single Centered Table ────────────────────────────────────────
-        self.table = self._create_table()
-        table_container = QHBoxLayout()
-        table_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        table_container.addWidget(self.table)
-        ml.addLayout(table_container)
+        # ── Table ────────────────────────────────────────────────────────
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
 
-        # ── Control Buttons ──────────────────────────────────────────────
-        ctrl_layout = QHBoxLayout()
-        ctrl_layout.setSpacing(6)
-
-        btn_style = (
-            "QPushButton{"
-            "background:#d4d0c8;"
-            "color:black;"
-            "border:2px outset #aaaaaa;"
-            "font:9pt Arial;"
-            "padding:4px 12px;"
-            "min-width:60px;"
-            "}"
-            "QPushButton:pressed{"
-            "border:2px inset #888888;"
-            "}"
-        )
-
-        btn_reset = QPushButton("Reset to Defaults")
-        btn_reset.setStyleSheet(btn_style)
-        btn_reset.clicked.connect(self._on_reset)
-
-        ctrl_layout.addWidget(btn_reset)
-        ctrl_layout.addStretch()
-
-        info_lbl = QLabel("ORDER = 0 hides the element from display/print")
-        info_lbl.setStyleSheet(
-            "QLabel{"
-            "color:#666666;"
-            "font:9pt Arial;"
-            "border:none;"
-            "}"
-        )
-        ctrl_layout.addWidget(info_lbl)
-
-        ml.addLayout(ctrl_layout)
-
-        # ── Bottom Nav ──────────────────────────────────────────────────
-        btn_bar = QWidget()
-        btn_bar.setAutoFillBackground(True)
-        bbp = btn_bar.palette()
-        bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
-        btn_bar.setPalette(bbp)
-
-        bbl = QHBoxLayout(btn_bar)
-        bbl.setContentsMargins(12, 4, 12, 8)
-        bbl.setSpacing(4)
-
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
-        ]:
-            b = QPushButton(txt)
-            b.setStyleSheet(btn_style)
-            b.clicked.connect(slot)
-            bbl.addWidget(b)
-
-        bbl.addStretch()
-
-        canc = QPushButton("9:Cancel")
-        canc.setStyleSheet(btn_style)
-        canc.clicked.connect(self._on_cancel)
-        bbl.addWidget(canc)
-
-        root.addWidget(btn_bar)
-
-    # =========================================================================
-    # Table Creation
-    # =========================================================================
-
-    def _create_table(self) -> QTableWidget:
-        """Create a table with 6 columns: ELE, NAME, ORDER, FIG, DECI, MAGN."""
-        table = QTableWidget()
-        table.setColumnCount(6)
-        table.setHorizontalHeaderLabels(["ELE", "NAME", "ORDER", "FIG", "DECI", "MAGN"])
-
-        table.setStyleSheet(
+        self.table.setStyleSheet(
             "QTableWidget{"
             "background:white;"
             "color:black;"
@@ -234,6 +176,7 @@ class DisplayPage(QWidget):
             "border:1px solid #888888;"
             "padding:0px 4px;"
             "color:black;"
+            "background:white;"
             "}"
             "QHeaderView::section{"
             "background:#0078d7;"
@@ -246,209 +189,248 @@ class DisplayPage(QWidget):
             "background:#cce5ff;"
             "color:black;"
             "}"
-            "QTableWidget::item:!selected{"
-            "color:black;"
-            "}"
-            "QTableWidget QLineEdit{"
-            "background:white;"
-            "color:black;"
-            "}"
-            "QTableWidget QComboBox{"
-            "background:white;"
-            "color:black;"
-            "border:1px solid #888888;"
+        )
+
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self.table.verticalHeader().setDefaultSectionSize(27)
+
+        header = self.table.horizontalHeader()
+        header.setSectionsClickable(False)
+        header.setHighlightSections(False)
+        header.setStretchLastSection(True)
+
+        self.table.setColumnWidth(self.COL_AR, 70)
+        self.table.setColumnWidth(self.COL_NAME, 130)
+        self.table.setColumnWidth(self.COL_ORDER, 90)
+        self.table.setColumnWidth(self.COL_FIG, 90)
+        self.table.setColumnWidth(self.COL_DECI, 90)
+        self.table.setColumnWidth(self.COL_MAGN, 90)
+
+        for col in range(len(self.HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        self.table.itemChanged.connect(self._on_item_changed)
+
+        outer_layout.addWidget(self.table, stretch=1)
+
+        # ── Control Row ──────────────────────────────────────────────────
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.setSpacing(6)
+
+        btn_reset = QPushButton("Reset to Defaults")
+        btn_reset.setStyleSheet(self._button_style())
+        btn_reset.clicked.connect(self._on_reset)
+        ctrl_layout.addWidget(btn_reset)
+
+        ctrl_layout.addStretch()
+
+        info_lbl = QLabel(
+            "If all ORDER values are 0, Job X can display active elements in Page 3 order."
+        )
+        info_lbl.setStyleSheet(
+            "QLabel{"
+            "color:#555555;"
             "font:9pt Arial;"
+            "border:none;"
+            "background:#d4d0c8;"
+            "}"
+        )
+        ctrl_layout.addWidget(info_lbl)
+
+        outer_layout.addLayout(ctrl_layout)
+
+        # ── Bottom Navigation ────────────────────────────────────────────
+        btn_bar = QWidget()
+        btn_bar.setAutoFillBackground(True)
+        btn_bar.setStyleSheet("background:#d4d0c8;")
+
+        nav = QHBoxLayout(btn_bar)
+        nav.setContentsMargins(12, 4, 12, 8)
+        nav.setSpacing(4)
+
+        for text, slot in [
+            ("OK", self._on_ok),
+            ("Next", self._on_next),
+            ("Previous", self._on_pre),
+            ("Print", self._on_print),
+        ]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(self._button_style())
+            btn.clicked.connect(slot)
+            nav.addWidget(btn)
+
+        nav.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(self._button_style())
+        cancel_btn.clicked.connect(self._on_cancel)
+        nav.addWidget(cancel_btn)
+
+        root.addWidget(btn_bar)
+
+    # =========================================================================
+    # Styles
+    # =========================================================================
+
+    def _button_style(self) -> str:
+        return (
+            "QPushButton{"
+            "background:#d4d0c8;"
+            "color:black;"
+            "border:2px outset #aaaaaa;"
+            "font:9pt Arial;"
+            "padding:4px 12px;"
+            "min-width:70px;"
+            "}"
+            "QPushButton:pressed{"
+            "border:2px inset #888888;"
             "}"
         )
 
-        col_widths = [50, 70, 55, 45, 45, 55]
-        for i, w in enumerate(col_widths):
-            table.setColumnWidth(i, w)
+    # =========================================================================
+    # Page 3 Rows
+    # =========================================================================
 
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    def _rows_from_page3(self) -> list:
+        """
+        Build Page 8 rows from Page 3 active analytical rows.
 
-        table.verticalHeader().setDefaultSectionSize(27)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        table.setRowCount(MAX_ELEMENTS)
-        self._populate_empty_rows(table)
-
-        table_height = (MAX_ELEMENTS * 27) + 27 + 3
-        table.setFixedHeight(table_height)
-
-        return table
-
-    def _populate_empty_rows(self, table):
-        """Fill rows with default widgets."""
-        for row in range(MAX_ELEMENTS):
-            # ELE (read-only, gray)
-            ele_item = QTableWidgetItem("")
-            ele_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            ele_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            ele_item.setBackground(QColor("#e8e8e8"))
-            ele_item.setForeground(QColor("black"))
-            table.setItem(row, 0, ele_item)
-
-            # NAME (read-only, gray)
-            name_item = QTableWidgetItem("")
-            name_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            name_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            name_item.setBackground(QColor("#e8e8e8"))
-            name_item.setForeground(QColor("black"))
-            table.setItem(row, 1, name_item)
-
-            # ORDER (editable, 0-99)
-            order_edit = QLineEdit("0")
-            order_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            order_edit.setValidator(QIntValidator(0, 99, order_edit))
-            order_edit.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            table.setCellWidget(row, 2, order_edit)
-
-            # FIG (editable, 1-6)
-            fig_edit = QLineEdit("0")
-            fig_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            fig_edit.setValidator(QIntValidator(0, 6, fig_edit))
-            fig_edit.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            table.setCellWidget(row, 3, fig_edit)
-
-            # DECI (editable, 0-6)
-            deci_edit = QLineEdit("0")
-            deci_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            deci_edit.setValidator(QIntValidator(0, 6, deci_edit))
-            deci_edit.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            table.setCellWidget(row, 4, deci_edit)
-
-            # MAGN (editable, 0-6)
-            magn_edit = QLineEdit("0")
-            magn_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            magn_edit.setValidator(QIntValidator(0, 6, magn_edit))
-            magn_edit.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            table.setCellWidget(row, 5, magn_edit)
-
-    def _populate_from_page3(self, data: list):
-        """Populate table using Page 3 data."""
-        for row in range(MAX_ELEMENTS):
-            ele_item = self.table.item(row, 0)
-            if ele_item:
-                ele_item.setText("")
-            name_item = self.table.item(row, 1)
-            if name_item:
-                name_item.setText("")
-            for col in range(2, 6):
-                edit = self.table.cellWidget(row, col)
-                if edit:
-                    edit.setText("0")
-
-        saved_data = {}
+        AR-No. and NAME come from Page 3.
+        Display/print values default to 0.
+        """
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_08_display:
-                display_list = g.page_08_display.get("display_order", [])
-                for entry in display_list:
-                    key = (entry.get("element", ""), entry.get("name", ""))
-                    saved_data[key] = entry
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if not group or not group.page_03_channel:
+                return []
+
+            if not isinstance(group.page_03_channel, list):
+                return []
+
+            rows = []
+
+            for idx, entry in enumerate(group.page_03_channel):
+                name = str(entry.get("name", "")).strip()
+                ele = str(entry.get("ele", "")).strip()
+                itg = str(entry.get("itg", "")).strip()
+
+                display_name = name or ele or (f"ITG{itg}" if itg else "")
+
+                if not display_name:
+                    continue
+
+                rows.append({
+                    "ar_no": str(idx + 1),
+                    "name": display_name,
+                    "order": "0",
+                    "fig": "0",
+                    "deci": "0",
+                    "magn": "0",
+                })
+
+            return rows
+
         finally:
             session.close()
 
-        for idx, entry in enumerate(data):
-            if idx >= MAX_ELEMENTS:
-                break
-            row = idx
-            ele = entry.get("ele", "")
-            name = entry.get("name", "")
+    # =========================================================================
+    # Table Population
+    # =========================================================================
 
-            ele_item = self.table.item(row, 0)
-            if ele_item:
-                ele_item.setText(ele)
-            name_item = self.table.item(row, 1)
-            if name_item:
-                name_item.setText(name)
+    def _populate_table(self, rows: list):
+        self._updating_table = True
 
-            key = (ele, name)
-            if key in saved_data:
-                saved = saved_data[key]
-                order_edit = self.table.cellWidget(row, 2)
-                if order_edit:
-                    order_edit.setText(str(saved.get("order", 0)))
-                fig_edit = self.table.cellWidget(row, 3)
-                if fig_edit:
-                    fig_edit.setText(str(saved.get("fig", 0)))
-                deci_edit = self.table.cellWidget(row, 4)
-                if deci_edit:
-                    deci_edit.setText(str(saved.get("deci", 0)))
-                magn_edit = self.table.cellWidget(row, 5)
-                if magn_edit:
-                    magn_edit.setText(str(saved.get("magn", 0)))
+        self.table.setRowCount(len(rows))
 
-    def _collect(self) -> dict:
-        """Collect data from table into a dict."""
-        display_order = []
-        for row in range(MAX_ELEMENTS):
-            ele_item = self.table.item(row, 0)
-            name_item = self.table.item(row, 1)
-            if not ele_item or not name_item:
-                continue
-            ele = ele_item.text().strip()
-            name = name_item.text().strip()
-            if not ele:
-                continue
+        for row_idx, row_data in enumerate(rows):
+            self._set_cell(
+                row_idx,
+                self.COL_AR,
+                str(row_data.get("ar_no", row_idx + 1)),
+                editable=False
+            )
 
-            order_edit = self.table.cellWidget(row, 2)
-            fig_edit = self.table.cellWidget(row, 3)
-            deci_edit = self.table.cellWidget(row, 4)
-            magn_edit = self.table.cellWidget(row, 5)
+            self._set_cell(
+                row_idx,
+                self.COL_NAME,
+                str(row_data.get("name", "")),
+                editable=False
+            )
 
-            def get_int(edit, default=0):
-                try:
-                    return int(edit.text().strip()) if edit and edit.text().strip() else default
-                except ValueError:
-                    return default
+            self._set_cell(
+                row_idx,
+                self.COL_ORDER,
+                self._normalize_int_text(row_data.get("order", ""), "0")
+            )
 
-            display_order.append({
-                "element": ele,
-                "name": name,
-                "order": get_int(order_edit, 0),
-                "fig": get_int(fig_edit, 0),
-                "deci": get_int(deci_edit, 0),
-                "magn": get_int(magn_edit, 0),
-            })
+            self._set_cell(
+                row_idx,
+                self.COL_FIG,
+                self._normalize_int_text(row_data.get("fig", ""), "0")
+            )
 
-        return {"display_order": display_order}
+            self._set_cell(
+                row_idx,
+                self.COL_DECI,
+                self._normalize_int_text(row_data.get("deci", ""), "0")
+            )
+
+            self._set_cell(
+                row_idx,
+                self.COL_MAGN,
+                self._normalize_int_text(row_data.get("magn", ""), "0")
+            )
+
+        self.table.resizeRowsToContents()
+
+        self._updating_table = False
+
+    def _set_cell(self, row: int, col: int, text: str, editable: bool = True):
+        item = QTableWidgetItem(str(text))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+
+        if editable:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        else:
+            item.setBackground(Qt.GlobalColor.lightGray)
+
+        item.setFlags(flags)
+        self.table.setItem(row, col, item)
+
+    # =========================================================================
+    # Edit Normalization
+    # =========================================================================
+
+    def _on_item_changed(self, item: QTableWidgetItem):
+        if self._updating_table:
+            return
+
+        if item.column() not in {
+            self.COL_ORDER,
+            self.COL_FIG,
+            self.COL_DECI,
+            self.COL_MAGN,
+        }:
+            return
+
+        current = item.text().strip()
+        normalized = self._normalize_int_text(current, "0")
+
+        if current != normalized:
+            self._updating_table = True
+            item.setText(normalized)
+            self._updating_table = False
 
     # =========================================================================
     # Data Operations
@@ -456,64 +438,231 @@ class DisplayPage(QWidget):
 
     def _load(self):
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g:
-                page3_data = g.page_03_channel
-                if isinstance(page3_data, list):
-                    self._populate_from_page3(page3_data)
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if group and group.page_08_display:
+                data = group.page_08_display
+
+                if isinstance(data, dict) and isinstance(data.get("rows"), list):
+                    saved_rows = data["rows"]
+
+                    page3_rows = self._rows_from_page3()
+                    merged_rows = self._merge_page3_with_saved(page3_rows, saved_rows)
+
+                    self._populate_table(merged_rows)
+                    return
+
         finally:
             session.close()
 
+        self._populate_table(self._rows_from_page3())
+
+    def _merge_page3_with_saved(self, page3_rows: list, saved_rows: list) -> list:
+        """
+        Merge saved Page 8 data into current Page 3 row order.
+        """
+        saved_lookup = {}
+
+        for row in saved_rows:
+            ar_no = str(row.get("ar_no", "")).strip()
+            name = str(row.get("name", "")).strip()
+
+            if ar_no:
+                saved_lookup[f"AR:{ar_no}"] = row
+
+            if name:
+                saved_lookup[f"NAME:{name.upper()}"] = row
+
+        merged = []
+
+        for row in page3_rows:
+            ar_key = f"AR:{str(row.get('ar_no', '')).strip()}"
+            name_key = f"NAME:{str(row.get('name', '')).strip().upper()}"
+
+            saved = saved_lookup.get(ar_key) or saved_lookup.get(name_key)
+
+            if saved:
+                merged_row = dict(row)
+
+                for key in ["order", "fig", "deci", "magn"]:
+                    if key in saved:
+                        merged_row[key] = saved.get(key)
+
+                merged.append(merged_row)
+            else:
+                merged.append(row)
+
+        return merged
+
+    def _collect(self) -> dict:
+        rows = []
+
+        for row in range(self.table.rowCount()):
+            row_data = {
+                "ar_no": self._cell_text(row, self.COL_AR),
+                "name": self._cell_text(row, self.COL_NAME),
+                "order": self._normalize_int_text(
+                    self._cell_text(row, self.COL_ORDER),
+                    "0"
+                ),
+                "fig": self._normalize_int_text(
+                    self._cell_text(row, self.COL_FIG),
+                    "0"
+                ),
+                "deci": self._normalize_int_text(
+                    self._cell_text(row, self.COL_DECI),
+                    "0"
+                ),
+                "magn": self._normalize_int_text(
+                    self._cell_text(row, self.COL_MAGN),
+                    "0"
+                ),
+            }
+
+            rows.append(row_data)
+
+        return {
+            "rows": rows
+        }
+
     def _save(self):
         data = self._collect()
+
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g:
-                g.page_08_display = data
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if group:
+                group.page_08_display = data
                 session.commit()
+
         finally:
             session.close()
 
     # =========================================================================
-    # Button Actions
+    # Helpers
+    # =========================================================================
+
+    def _cell_text(self, row: int, col: int) -> str:
+        item = self.table.item(row, col)
+        return item.text().strip() if item else ""
+
+    def _normalize_int_text(self, value, default: str = "0") -> str:
+        raw = str(value or "").strip()
+
+        if raw == "":
+            raw = default
+
+        try:
+            num = int(float(raw))
+        except (TypeError, ValueError):
+            num = int(default)
+
+        return str(num)
+
+    # =========================================================================
+    # Public Helper for Job X Later
+    # =========================================================================
+
+    @staticmethod
+    def format_value(value, deci: int = 0, magn: int = 0) -> str:
+        """
+        Utility to format final content values according to Page 8 rules.
+
+        This can be reused later by Job X.
+
+        Rule:
+        - Apply multiplier: displayed = value * (10 ** magn)
+        - If deci > 0: fixed decimal places
+        - If deci == 0: use default floating format
+        """
+        try:
+            val = float(value)
+        except (TypeError, ValueError):
+            val = 0.0
+
+        try:
+            m = int(magn)
+        except (TypeError, ValueError):
+            m = 0
+
+        try:
+            d = int(deci)
+        except (TypeError, ValueError):
+            d = 0
+
+        displayed = val * (10 ** m)
+
+        if d > 0:
+            return f"{displayed:.{d}f}"
+
+        return f"{displayed:.6g}"
+
+    # =========================================================================
+    # Buttons
     # =========================================================================
 
     def _on_reset(self):
         if QMessageBox.question(
             self,
             "Reset",
-            "Reset all values to defaults?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) == QMessageBox.StandardButton.Yes:
-            for row in range(MAX_ELEMENTS):
-                for col in range(2, 6):
-                    edit = self.table.cellWidget(row, col)
-                    if edit:
-                        edit.setText("0")
+            "Reset Page 8 display and print format to defaults?\n\n"
+            "ORDER = 0\n"
+            "FIG = 0\n"
+            "DECI = 0\n"
+            "MAGN = 0\n\n"
+            "This only changes the table. Click OK to save.",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        self._populate_table(self._rows_from_page3())
 
     def _on_ok(self):
         self._save()
-        self._show_msg("Saved", "Display format saved successfully.")
+        self._show_msg("Saved", "Display and print format saved successfully.")
 
     def _on_next(self):
         self._save()
+
+        # Old manual Page 9 Data Transmission is skipped in this modern app.
+        # Manual Page 10 Purity Calculation is stored as page_09_purity in schema.
         try:
-            from ui.anainf.page_09_purity import PurityPage
+            from ui.anainf.page_09_purity import PurityCalculationPage
+
             self.main_window.set_right_widget(
-                PurityPage(self.main_window, self.group_id, self.group_name)
+                PurityCalculationPage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
-            self._show_msg("Next Page", "Page 9 (Purity) is not built yet.")
+            self._show_msg(
+                "Next Page",
+                "Purity Calculation page is not built yet.\n\n"
+                "Data Transmission page is intentionally skipped for now."
+            )
 
     def _on_pre(self):
         self._save()
+
         try:
             from ui.anainf.page_07_master import MasterCurvePage
+
             self.main_window.set_right_widget(
-                MasterCurvePage(self.main_window, self.group_id, self.group_name)
+                MasterCurvePage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
             pass
 
@@ -526,7 +675,7 @@ class DisplayPage(QWidget):
             self.main_window._show_home_content()
 
     # =========================================================================
-    # Message Box Helpers
+    # Message Helpers
     # =========================================================================
 
     def _show_msg(self, title, text, icon=QMessageBox.Icon.Information):
@@ -555,7 +704,10 @@ class DisplayPage(QWidget):
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle(title)
         msg.setText(text)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
         msg.setStyleSheet(
             "QLabel{color:black;font:9pt Arial;}"
             "QPushButton{"
