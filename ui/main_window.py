@@ -104,6 +104,13 @@ class MainWindow(QMainWindow):
         )
         regression_m.addAction(self.action_regression_calc)
 
+        self.action_matrix_calc = QAction("Matrix Coefficient Calculation", self)
+        self.action_matrix_calc.setCheckable(True)
+        self.action_matrix_calc.triggered.connect(
+            self._open_matrix_calculation
+        )
+        regression_m.addAction(self.action_matrix_calc)
+
         regression_m.addSeparator()
 
         self.action_working_curve_page = QAction("Working Curve Coefficients", self)
@@ -333,6 +340,33 @@ class MainWindow(QMainWindow):
                 self,
                 "Regression",
                 "Regression Calculation page is not built yet."
+            )
+            
+    def _open_matrix_calculation(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        self._set_active_menu(self.action_matrix_calc)
+
+        try:
+            from ui.regression.matrix_calculation_page import MatrixCalculationPage
+
+            self.set_right_widget(
+                MatrixCalculationPage(
+                    self,
+                    gid,
+                    gname
+                )
+            )
+
+        except ImportError:
+            QMessageBox.information(
+                self,
+                "Regression",
+                "Matrix Coefficient Calculation page is not built yet."
             )
 
     def _open_working_curve_page(self):

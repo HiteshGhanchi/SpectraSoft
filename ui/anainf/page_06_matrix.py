@@ -1,66 +1,105 @@
 """
-SpectraSoft — Page 6: Matrix Element Correction
+SpectraSoft — Page 6: Matrix Element Correction Coefficients
 
-This page defines correction coefficients for inter-element interference.
-It allows correction for:
-- Type L: Overlap correction (spectral line interference)
-- Type D: Absorption/Excitation correction (matrix effect)
+Manual-style Page 6 table:
 
-Columns:
-- Target: The element being corrected (dropdown from Page 3 elements)
-- Type: Correction type (L = Overlap, D = Absorption/Excitation)
-- Interfering: The element causing the interference (dropdown from Page 3 elements)
-- Coeff: Correction coefficient (editable float)
+Target AR-No. | Target NAME | D/L | Interfering AR-No. | Interfering NAME | COEFF.
 
-Rules:
-- A single target can have multiple interfering elements
-- Type L corrections are additive (subtract interfering contribution)
-- Type D corrections are multiplicative (scale the result)
-- Coefficients are typically auto-calculated by Regression module
+Purpose:
+- Stores inter-element matrix correction coefficients.
+- These coefficients are used after Page 5 working curve conversion.
+- Page 6 is normally filed by Regression Matrix Coefficient Calculation.
+- User can also manually enter / override rows.
+
+Correction meaning:
+- L = additive / overlap correction
+      C = C0 + sum(lj * Cj)
+
+- D = multiplicative / matrix effect correction
+      C = C0 * (1 + sum(dj * Cj))
+
+Default:
+- No matrix corrections active.
+- Empty rows are ignored.
+- COEFF. defaults to 0.000000.
 
 Saved JSON example:
 {
     "corrections": [
-        {"target": "MN", "type": "L", "interfering": "CR", "coeff": 0.00123456},
-        {"target": "MN", "type": "L", "interfering": "MO", "coeff": 0.00098765},
-        {"target": "SI", "type": "D", "interfering": "AL", "coeff": 0.00056789}
+        {
+            "target_ar_no": "4",
+            "target_element": "MN",
+            "target_name": "Mn",
+            "type": "L",
+            "interfering_ar_no": "10",
+            "interfering_element": "CR",
+            "interfering_name": "Cr",
+            "coeff": 0.000000
+        }
     ]
 }
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QScrollArea, QMessageBox,
+    QPushButton, QFrame, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QComboBox, QLineEdit
+    QAbstractItemView
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
 
-MAX_CORRECTIONS = 100  # Maximum number of correction rows
-
 
 class CorrectionPage(QWidget):
+    """
+    Page 6: Matrix Element Correction Coefficients.
+    """
+
+    COL_TARGET_AR = 0
+    COL_TARGET_NAME = 1
+    COL_TYPE = 2
+    COL_INTERF_AR = 3
+    COL_INTERF_NAME = 4
+    COL_COEFF = 5
+
+    HEADERS = [
+        "AR-No.",
+        "NAME",
+        "D/L",
+        "AR-No.",
+        "NAME",
+        "COEFF.",
+    ]
 
     def __init__(self, main_window, group_id: int, group_name: str):
         super().__init__()
+
         self.main_window = main_window
         self.group_id = group_id
         self.group_name = group_name
+
+        self._updating_table = False
+
+        # Page 3 lookup:
+        # {
+        #   "1": {"name": "Fe", "element": "FE"},
+        #   "2": {"name": "C", "element": "C"}
+        # }
+        self._ar_lookup = {}
 
         self.setAutoFillBackground(True)
         p = self.palette()
         p.setColor(self.backgroundRole(), Qt.GlobalColor.lightGray)
         self.setPalette(p)
 
+        self._load_page3_lookup()
         self._build_ui()
         self._load()
 
     # =========================================================================
-    # UI Construction
+    # UI
     # =========================================================================
 
     def _build_ui(self):
@@ -68,8 +107,8 @@ class CorrectionPage(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Title Bar ──────────────────────────────────────────────────────
-        bar = QLabel(f"Matrix Correction - {self.group_name}")
+        # Title Bar
+        bar = QLabel(f"Matrix Correction Coefficients - {self.group_name}")
         bar.setFixedHeight(24)
         bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -80,35 +119,21 @@ class CorrectionPage(QWidget):
         )
         root.addWidget(bar)
 
-        # ── Outer Frame ──────────────────────────────────────────────────
+        # Outer Frame
         outer = QFrame()
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet("background:#d4d0c8;")
         root.addWidget(outer, stretch=1)
 
-        ol = QVBoxLayout(outer)
-        ol.setContentsMargins(0, 0, 0, 0)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(14, 14, 14, 10)
+        outer_layout.setSpacing(8)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border:none;")
-        ol.addWidget(scroll)
-
-        inner = QWidget()
-        inner.setAutoFillBackground(True)
-        ip = inner.palette()
-        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
-        inner.setPalette(ip)
-        scroll.setWidget(inner)
-
-        ml = QVBoxLayout(inner)
-        ml.setContentsMargins(20, 16, 20, 12)
-        ml.setSpacing(8)
-
-        # ── Table Title ──────────────────────────────────────────────────
-        title = QLabel("MATRIX ELEMENT CORRECTION")
+        # Page Title
+        title = QLabel("MATRIX ELEMENT CORRECTION COEFFICIENTS")
+        title.setFixedHeight(24)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
             "QLabel{"
@@ -119,105 +144,33 @@ class CorrectionPage(QWidget):
             "padding:3px 0px;"
             "}"
         )
-        ml.addWidget(title)
+        outer_layout.addWidget(title)
 
-        # ── Single Centered Table ────────────────────────────────────────
-        self.table = self._create_table()
-        table_container = QHBoxLayout()
-        table_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        table_container.addWidget(self.table)
-        ml.addLayout(table_container)
-
-        # ── Control Buttons ──────────────────────────────────────────────
-        ctrl_layout = QHBoxLayout()
-        ctrl_layout.setSpacing(6)
-
-        btn_style = (
-            "QPushButton{"
-            "background:#d4d0c8;"
-            "color:black;"
-            "border:2px outset #aaaaaa;"
-            "font:9pt Arial;"
-            "padding:4px 12px;"
-            "min-width:60px;"
-            "}"
-            "QPushButton:pressed{"
-            "border:2px inset #888888;"
-            "}"
+        # Help note
+        note = QLabel(
+            "Register inter-element corrections. D/L may be blank, D, or L. "
+            "D = multiplicative matrix correction; L = additive overlap correction. "
+            "Rows with blank AR-No. fields are ignored."
         )
-
-        btn_add = QPushButton("Add Row")
-        btn_add.setStyleSheet(btn_style)
-        btn_add.clicked.connect(self._on_add)
-
-        btn_delete = QPushButton("Delete Row")
-        btn_delete.setStyleSheet(btn_style)
-        btn_delete.clicked.connect(self._on_delete)
-
-        btn_clear = QPushButton("Clear All")
-        btn_clear.setStyleSheet(btn_style)
-        btn_clear.clicked.connect(self._on_clear)
-
-        ctrl_layout.addWidget(btn_add)
-        ctrl_layout.addWidget(btn_delete)
-        ctrl_layout.addWidget(btn_clear)
-        ctrl_layout.addStretch()
-
-        info_lbl = QLabel("L = Overlap (subtractive) | D = Absorption/Excitation (multiplicative)")
-        info_lbl.setStyleSheet(
+        note.setFixedHeight(42)
+        note.setWordWrap(True)
+        note.setStyleSheet(
             "QLabel{"
-            "color:#666666;"
+            "background:#f0ece4;"
+            "color:#555555;"
             "font:9pt Arial;"
-            "border:none;"
+            "border:1px solid #888888;"
+            "padding:4px 6px;"
             "}"
         )
-        ctrl_layout.addWidget(info_lbl)
+        outer_layout.addWidget(note)
 
-        ml.addLayout(ctrl_layout)
+        # Table
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
 
-        # ── Bottom Nav ──────────────────────────────────────────────────
-        btn_bar = QWidget()
-        btn_bar.setAutoFillBackground(True)
-        bbp = btn_bar.palette()
-        bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
-        btn_bar.setPalette(bbp)
-
-        bbl = QHBoxLayout(btn_bar)
-        bbl.setContentsMargins(12, 4, 12, 8)
-        bbl.setSpacing(4)
-
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
-        ]:
-            b = QPushButton(txt)
-            b.setStyleSheet(btn_style)
-            b.clicked.connect(slot)
-            bbl.addWidget(b)
-
-        bbl.addStretch()
-
-        canc = QPushButton("9:Cancel")
-        canc.setStyleSheet(btn_style)
-        canc.clicked.connect(self._on_cancel)
-        bbl.addWidget(canc)
-
-        root.addWidget(btn_bar)
-
-    # =========================================================================
-    # Table Creation
-    # =========================================================================
-
-    def _create_table(self) -> QTableWidget:
-        """Create a table with 4 columns: Target, Type, Interfering, Coeff."""
-        table = QTableWidget()
-        table.setColumnCount(4)
-        table.setHorizontalHeaderLabels(["Target", "Type", "Interfering", "Coeff"])
-
-        # Excel-style styling
-        table.setStyleSheet(
+        self.table.setStyleSheet(
             "QTableWidget{"
             "background:white;"
             "color:black;"
@@ -229,6 +182,7 @@ class CorrectionPage(QWidget):
             "border:1px solid #888888;"
             "padding:0px 4px;"
             "color:black;"
+            "background:white;"
             "}"
             "QHeaderView::section{"
             "background:#0078d7;"
@@ -241,312 +195,534 @@ class CorrectionPage(QWidget):
             "background:#cce5ff;"
             "color:black;"
             "}"
-            "QTableWidget::item:!selected{"
-            "color:black;"
+        )
+
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self.table.verticalHeader().setDefaultSectionSize(27)
+
+        header = self.table.horizontalHeader()
+        header.setSectionsClickable(False)
+        header.setHighlightSections(False)
+        header.setStretchLastSection(True)
+
+        self.table.setColumnWidth(self.COL_TARGET_AR, 70)
+        self.table.setColumnWidth(self.COL_TARGET_NAME, 130)
+        self.table.setColumnWidth(self.COL_TYPE, 60)
+        self.table.setColumnWidth(self.COL_INTERF_AR, 70)
+        self.table.setColumnWidth(self.COL_INTERF_NAME, 130)
+        self.table.setColumnWidth(self.COL_COEFF, 110)
+
+        for col in range(len(self.HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        self.table.itemChanged.connect(self._on_item_changed)
+
+        outer_layout.addWidget(self.table, stretch=1)
+
+        # Control row
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.setSpacing(6)
+
+        btn_add = QPushButton("Add Correction")
+        btn_add.setStyleSheet(self._button_style())
+        btn_add.clicked.connect(self._on_add_row)
+        ctrl_layout.addWidget(btn_add)
+
+        btn_delete = QPushButton("Delete Selected")
+        btn_delete.setStyleSheet(self._button_style())
+        btn_delete.clicked.connect(self._on_delete_selected)
+        ctrl_layout.addWidget(btn_delete)
+
+        btn_clear = QPushButton("Clear All")
+        btn_clear.setStyleSheet(self._button_style())
+        btn_clear.clicked.connect(self._on_clear_all)
+        ctrl_layout.addWidget(btn_clear)
+
+        ctrl_layout.addStretch()
+
+        info_lbl = QLabel(
+            "No correction is applied when this table is empty or coefficients are 0.000000."
+        )
+        info_lbl.setStyleSheet(
+            "QLabel{"
+            "color:#555555;"
+            "font:9pt Arial;"
+            "border:none;"
+            "background:#d4d0c8;"
             "}"
-            "QTableWidget QLineEdit{"
-            "background:white;"
+        )
+        ctrl_layout.addWidget(info_lbl)
+
+        outer_layout.addLayout(ctrl_layout)
+
+        # Bottom Navigation
+        btn_bar = QWidget()
+        btn_bar.setAutoFillBackground(True)
+        btn_bar.setStyleSheet("background:#d4d0c8;")
+
+        nav = QHBoxLayout(btn_bar)
+        nav.setContentsMargins(12, 4, 12, 8)
+        nav.setSpacing(4)
+
+        for text, slot in [
+            ("OK", self._on_ok),
+            ("Next", self._on_next),
+            ("Previous", self._on_pre),
+            ("Print", self._on_print),
+        ]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(self._button_style())
+            btn.clicked.connect(slot)
+            nav.addWidget(btn)
+
+        nav.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(self._button_style())
+        cancel_btn.clicked.connect(self._on_cancel)
+        nav.addWidget(cancel_btn)
+
+        root.addWidget(btn_bar)
+
+    # =========================================================================
+    # Styles
+    # =========================================================================
+
+    def _button_style(self) -> str:
+        return (
+            "QPushButton{"
+            "background:#d4d0c8;"
             "color:black;"
+            "border:2px outset #aaaaaa;"
+            "font:9pt Arial;"
+            "padding:4px 12px;"
+            "min-width:70px;"
+            "}"
+            "QPushButton:pressed{"
+            "border:2px inset #888888;"
             "}"
         )
 
-        # Column widths
-        table.setColumnWidth(0, 100)  # Target
-        table.setColumnWidth(1, 80)   # Type
-        table.setColumnWidth(2, 100)  # Interfering
-        table.setColumnWidth(3, 120)  # Coeff
+    # =========================================================================
+    # Page 3 Lookup
+    # =========================================================================
 
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    def _load_page3_lookup(self):
+        """
+        Load AR-No. -> element/name mapping from Page 3.
+        """
+        self._ar_lookup = {}
 
-        # Row height
-        table.verticalHeader().setDefaultSectionSize(27)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        # Set initial row count to 0 (user adds rows)
-        table.setRowCount(0)
-        table.setFixedWidth(440)  # 100 + 80 + 100 + 120 + borders
-
-        return table
-
-    def _get_element_list(self) -> list:
-        """Get list of elements from Page 3 data."""
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_03_channel:
-                page3_data = g.page_03_channel
-                if isinstance(page3_data, list):
-                    elements = []
-                    for entry in page3_data:
-                        ele = entry.get("ele", "").strip()
-                        name = entry.get("name", "").strip()
-                        if ele:
-                            display = f"{ele}" if not name or name == ele else f"{ele} ({name})"
-                            elements.append((display, ele))
-                    return elements
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if not group or not group.page_03_channel:
+                return
+
+            if not isinstance(group.page_03_channel, list):
+                return
+
+            for idx, entry in enumerate(group.page_03_channel):
+                ar_no = str(idx + 1)
+
+                name = str(entry.get("name", "")).strip()
+                ele = str(entry.get("ele", "")).strip()
+                itg = str(entry.get("itg", "")).strip()
+
+                display_name = name or ele or (f"ITG{itg}" if itg else "")
+
+                if not display_name:
+                    continue
+
+                self._ar_lookup[ar_no] = {
+                    "name": display_name,
+                    "element": ele or display_name,
+                }
+
         finally:
             session.close()
-        return []
 
-    def _create_combo(self, items: list, current_value: str = ""):
-        """Create a combobox with the given items."""
-        combo = QComboBox()
-        combo.addItem("")  # Empty option
-        for display, value in items:
-            combo.addItem(display, value)
-        combo.setStyleSheet(
-            "QComboBox{"
-            "background:white;"
-            "color:black;"
-            "border:1px solid #888888;"
-            "font:9pt Arial;"
-            "padding:0px 2px;"
-            "}"
-            "QComboBox::drop-down{"
-            "border:none;"
-            "width:12px;"
-            "}"
-            "QComboBox QAbstractItemView{"
-            "background:white;"
-            "color:black;"
-            "}"
-        )
-        # Set current value if found
-        if current_value:
-            index = combo.findData(current_value)
-            if index >= 0:
-                combo.setCurrentIndex(index)
-        return combo
+    def _name_for_ar(self, ar_no: str) -> str:
+        ar_no = str(ar_no or "").strip()
+
+        if ar_no in self._ar_lookup:
+            return self._ar_lookup[ar_no]["name"]
+
+        return ""
+
+    def _element_for_ar(self, ar_no: str) -> str:
+        ar_no = str(ar_no or "").strip()
+
+        if ar_no in self._ar_lookup:
+            return self._ar_lookup[ar_no]["element"]
+
+        return ""
+
+    # =========================================================================
+    # Table Helpers
+    # =========================================================================
+
+    def _on_item_changed(self, item: QTableWidgetItem):
+        """
+        Normalize D/L and auto-fill names from AR-No.
+        """
+        if self._updating_table:
+            return
+
+        row = item.row()
+        col = item.column()
+        text = item.text().strip()
+
+        if col == self.COL_TYPE:
+            value = text.upper()
+
+            if value not in ["", "D", "L"]:
+                self._updating_table = True
+                item.setText("")
+                self._updating_table = False
+                self._show_msg(
+                    "Invalid D/L",
+                    "D/L must be blank, D, or L.",
+                    QMessageBox.Icon.Warning
+                )
+                return
+
+            if value != text:
+                self._updating_table = True
+                item.setText(value)
+                self._updating_table = False
+
+        elif col == self.COL_TARGET_AR:
+            target_name = self._name_for_ar(text)
+
+            self._updating_table = True
+            self._set_cell_text(row, self.COL_TARGET_NAME, target_name, editable=False)
+            self._updating_table = False
+
+        elif col == self.COL_INTERF_AR:
+            interf_name = self._name_for_ar(text)
+
+            self._updating_table = True
+            self._set_cell_text(row, self.COL_INTERF_NAME, interf_name, editable=False)
+            self._updating_table = False
+
+    def _set_cell_text(self, row: int, col: int, text: str, editable: bool = True):
+        item = QTableWidgetItem(str(text))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+
+        if editable:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        else:
+            item.setBackground(Qt.GlobalColor.lightGray)
+
+        item.setFlags(flags)
+        self.table.setItem(row, col, item)
 
     def _add_row(self, data: dict = None):
-        """Add a new row to the table."""
+        data = data or {}
+
         row = self.table.rowCount()
         self.table.insertRow(row)
 
-        # Get element list
-        elements = self._get_element_list()
+        target_ar = str(data.get("target_ar_no", "")).strip()
+        interf_ar = str(data.get("interfering_ar_no", "")).strip()
 
-        # Target column - dropdown
-        target_combo = self._create_combo(
-            elements,
-            data.get("target", "") if data else ""
-        )
-        self.table.setCellWidget(row, 0, target_combo)
+        target_name = str(data.get("target_name", "")).strip() or self._name_for_ar(target_ar)
+        interf_name = str(data.get("interfering_name", "")).strip() or self._name_for_ar(interf_ar)
 
-        # Type column - dropdown (L or D)
-        type_combo = QComboBox()
-        type_combo.addItems(["", "L", "D"])
-        type_combo.setStyleSheet(
-            "QComboBox{"
-            "background:white;"
-            "color:black;"
-            "border:1px solid #888888;"
-            "font:9pt Arial;"
-            "padding:0px 2px;"
-            "}"
-            "QComboBox::drop-down{"
-            "border:none;"
-            "width:12px;"
-            "}"
-            "QComboBox QAbstractItemView{"
-            "background:white;"
-            "color:black;"
-            "}"
-        )
-        if data and data.get("type"):
-            idx = type_combo.findText(data.get("type", ""))
-            if idx >= 0:
-                type_combo.setCurrentIndex(idx)
-        self.table.setCellWidget(row, 1, type_combo)
+        corr_type = str(data.get("type", "")).strip().upper()
 
-        # Interfering column - dropdown
-        inter_combo = self._create_combo(
-            elements,
-            data.get("interfering", "") if data else ""
-        )
-        self.table.setCellWidget(row, 2, inter_combo)
+        if corr_type not in ["", "D", "L"]:
+            corr_type = ""
 
-        # Coeff column - editable float
-        coeff_edit = QLineEdit()
-        coeff_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        validator = QDoubleValidator(-100.0, 100.0, 8, coeff_edit)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-        coeff_edit.setValidator(validator)
-        coeff_edit.setStyleSheet(
-            "QLineEdit{"
-            "background:white;"
-            "color:black;"
-            "border:1px solid #888888;"
-            "font:9pt Arial;"
-            "padding:0px 2px;"
-            "}"
-        )
-        if data and data.get("coeff") is not None:
-            coeff_edit.setText(f"{data.get('coeff', 0.0):.8f}")
-        else:
-            coeff_edit.setText("0.00000000")
-        self.table.setCellWidget(row, 3, coeff_edit)
+        coeff = self._normalize_float_text(data.get("coeff", ""), "0.000000", 6)
 
-        # Update table height
-        self._update_table_height()
+        self._set_cell_text(row, self.COL_TARGET_AR, target_ar)
+        self._set_cell_text(row, self.COL_TARGET_NAME, target_name, editable=False)
+        self._set_cell_text(row, self.COL_TYPE, corr_type)
+        self._set_cell_text(row, self.COL_INTERF_AR, interf_ar)
+        self._set_cell_text(row, self.COL_INTERF_NAME, interf_name, editable=False)
+        self._set_cell_text(row, self.COL_COEFF, coeff)
 
-    def _update_table_height(self):
-        """Update table height based on row count."""
-        row_count = self.table.rowCount()
-        if row_count == 0:
-            row_count = 1  # At least show header
-        table_height = (row_count * 27) + 27 + 3
-        self.table.setFixedHeight(table_height)
+    def _cell_text(self, row: int, col: int) -> str:
+        item = self.table.item(row, col)
 
-    def _populate_from_data(self, data: list):
-        """Populate table from saved data."""
-        self.table.setRowCount(0)
-        for entry in data:
-            self._add_row(entry)
-        self._update_table_height()
+        if not item:
+            return ""
+
+        return item.text().strip()
 
     # =========================================================================
     # Data Operations
     # =========================================================================
 
-    def _collect(self) -> dict:
-        """Collect data from table into a dict."""
-        corrections = []
-        for row in range(self.table.rowCount()):
-            target_combo = self.table.cellWidget(row, 0)
-            type_combo = self.table.cellWidget(row, 1)
-            inter_combo = self.table.cellWidget(row, 2)
-            coeff_edit = self.table.cellWidget(row, 3)
-
-            target = target_combo.currentData() if target_combo else ""
-            corr_type = type_combo.currentText().strip() if type_combo else ""
-            interfering = inter_combo.currentData() if inter_combo else ""
-            coeff = 0.0
-            if coeff_edit:
-                try:
-                    coeff = float(coeff_edit.text().strip()) if coeff_edit.text().strip() else 0.0
-                except ValueError:
-                    coeff = 0.0
-
-            # Only save rows with a target
-            if target:
-                corrections.append({
-                    "target": target,
-                    "type": corr_type,
-                    "interfering": interfering,
-                    "coeff": coeff
-                })
-
-        return {"corrections": corrections}
-
     def _load(self):
-        """Load saved corrections from database."""
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_06_matrix:
-                data = g.page_06_matrix
-                if isinstance(data, dict):
-                    corrections = data.get("corrections", [])
-                    if corrections:
-                        self._populate_from_data(corrections)
-                        return
+            group = session.get(AnalyticalGroup, self.group_id)
+            data = group.page_06_matrix if group else {}
+
+            corrections = []
+
+            if isinstance(data, dict):
+                corrections = data.get("corrections", [])
+
+                if not isinstance(corrections, list):
+                    corrections = []
+
         finally:
             session.close()
 
-        # No data - empty table
+        self._updating_table = True
         self.table.setRowCount(0)
-        self._update_table_height()
+
+        for correction in corrections:
+            if isinstance(correction, dict):
+                self._add_row(correction)
+
+        self._updating_table = False
+
+        if self.table.rowCount() == 0:
+            self._add_row()
+
+    def _collect(self) -> dict:
+        corrections = []
+
+        for row in range(self.table.rowCount()):
+            target_ar = self._cell_text(row, self.COL_TARGET_AR)
+            target_name = self._cell_text(row, self.COL_TARGET_NAME)
+            corr_type = self._cell_text(row, self.COL_TYPE).upper()
+            interf_ar = self._cell_text(row, self.COL_INTERF_AR)
+            interf_name = self._cell_text(row, self.COL_INTERF_NAME)
+            coeff_text = self._cell_text(row, self.COL_COEFF)
+
+            # Completely blank row is ignored.
+            if (
+                not target_ar and
+                not target_name and
+                not corr_type and
+                not interf_ar and
+                not interf_name and
+                not coeff_text
+            ):
+                continue
+
+            # Row with only default coeff and no AR fields is ignored.
+            if not target_ar and not interf_ar:
+                continue
+
+            if corr_type not in ["D", "L"]:
+                raise ValueError(
+                    f"Row {row + 1}: D/L must be D or L."
+                )
+
+            if not target_ar:
+                raise ValueError(
+                    f"Row {row + 1}: Target AR-No. is required."
+                )
+
+            if not interf_ar:
+                raise ValueError(
+                    f"Row {row + 1}: Interfering AR-No. is required."
+                )
+
+            if target_ar == interf_ar:
+                raise ValueError(
+                    f"Row {row + 1}: Target and interfering element cannot be the same."
+                )
+
+            target_element = self._element_for_ar(target_ar)
+            interfering_element = self._element_for_ar(interf_ar)
+
+            if not target_element:
+                raise ValueError(
+                    f"Row {row + 1}: Target AR-No. {target_ar} is not found in Page 3."
+                )
+
+            if not interfering_element:
+                raise ValueError(
+                    f"Row {row + 1}: Interfering AR-No. {interf_ar} is not found in Page 3."
+                )
+
+            coeff = self._to_float(coeff_text, 0.0)
+
+            corrections.append({
+                "target_ar_no": target_ar,
+                "target_element": target_element,
+                "target_name": target_name or target_element,
+                "type": corr_type,
+                "interfering_ar_no": interf_ar,
+                "interfering_element": interfering_element,
+                "interfering_name": interf_name or interfering_element,
+                "coeff": coeff,
+            })
+
+        return {
+            "corrections": corrections
+        }
 
     def _save(self):
-        """Save corrections to database."""
         data = self._collect()
+
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g:
-                g.page_06_matrix = data
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if group:
+                group.page_06_matrix = data
                 session.commit()
+
         finally:
             session.close()
 
     # =========================================================================
-    # Button Actions
+    # Helpers
     # =========================================================================
 
-    def _on_add(self):
-        """Add a new correction row."""
-        # Check if we have elements in Page 3
-        elements = self._get_element_list()
-        if not elements:
-            QMessageBox.warning(
-                self,
-                "No Elements",
-                "Please configure Page 3 (Element Information) first.\n"
-                "You need at least one element to create corrections."
-            )
-            return
+    def _to_float(self, text, default: float = 0.0) -> float:
+        try:
+            value = str(text or "").strip()
 
-        # Check if we've reached the maximum
-        if self.table.rowCount() >= MAX_CORRECTIONS:
-            QMessageBox.warning(
-                self,
-                "Limit Reached",
-                f"Maximum {MAX_CORRECTIONS} corrections allowed."
-            )
-            return
+            if value == "":
+                return default
 
+            return float(value)
+
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid numeric coefficient: {text}")
+
+    def _normalize_float_text(self, value, default: str, decimals: int) -> str:
+        raw = str(value or "").strip()
+
+        if raw == "":
+            raw = default
+
+        try:
+            return f"{float(raw):.{decimals}f}"
+
+        except (TypeError, ValueError):
+            return default
+
+    # =========================================================================
+    # Buttons
+    # =========================================================================
+
+    def _on_add_row(self):
         self._add_row()
 
-    def _on_delete(self):
-        """Delete selected row."""
-        current_row = self.table.currentRow()
-        if current_row < 0:
-            QMessageBox.warning(self, "Warning", "Please select a row to delete.")
+    def _on_delete_selected(self):
+        selected = self.table.selectionModel().selectedRows()
+
+        if not selected:
+            self._show_msg(
+                "Delete",
+                "Please select a correction row to delete.",
+                QMessageBox.Icon.Warning
+            )
             return
 
-        if self.table.rowCount() <= 1:
-            self.table.removeRow(current_row)
-            self._update_table_height()
+        row = selected[0].row()
+
+        if QMessageBox.question(
+            self,
+            "Delete Correction",
+            "Delete selected matrix correction row?",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
             return
 
-        self.table.removeRow(current_row)
-        self._update_table_height()
+        self.table.removeRow(row)
 
-    def _on_clear(self):
-        """Clear all rows."""
+        if self.table.rowCount() == 0:
+            self._add_row()
+
+    def _on_clear_all(self):
         if QMessageBox.question(
             self,
             "Clear All",
-            "Remove all corrections?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) == QMessageBox.StandardButton.Yes:
-            self.table.setRowCount(0)
-            self._update_table_height()
+            "Clear all matrix correction rows?",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        self.table.setRowCount(0)
+        self._add_row()
 
     def _on_ok(self):
-        self._save()
+        try:
+            self._save()
+        except ValueError as e:
+            self._show_msg(
+                "Invalid Matrix Correction",
+                str(e),
+                QMessageBox.Icon.Warning
+            )
+            return
+
         self._show_msg("Saved", "Matrix correction data saved successfully.")
 
     def _on_next(self):
-        self._save()
+        try:
+            self._save()
+        except ValueError as e:
+            self._show_msg(
+                "Invalid Matrix Correction",
+                str(e),
+                QMessageBox.Icon.Warning
+            )
+            return
+
         try:
             from ui.anainf.page_07_master import MasterCurvePage
+
             self.main_window.set_right_widget(
-                MasterCurvePage(self.main_window, self.group_id, self.group_name)
+                MasterCurvePage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
-            self._show_msg("Next Page", "Page 7 (Master Curve) is not built yet.")
+            self._show_msg("Next Page", "Page 7 is not built yet.")
 
     def _on_pre(self):
-        self._save()
+        try:
+            self._save()
+        except ValueError as e:
+            self._show_msg(
+                "Invalid Matrix Correction",
+                str(e),
+                QMessageBox.Icon.Warning
+            )
+            return
+
         try:
             from ui.anainf.page_05_working_curve import WorkingCurvePage
+
             self.main_window.set_right_widget(
-                WorkingCurvePage(self.main_window, self.group_id, self.group_name)
+                WorkingCurvePage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
             pass
 
@@ -559,7 +735,7 @@ class CorrectionPage(QWidget):
             self.main_window._show_home_content()
 
     # =========================================================================
-    # Message Box Helpers
+    # Message Helpers
     # =========================================================================
 
     def _show_msg(self, title, text, icon=QMessageBox.Icon.Information):
@@ -588,7 +764,10 @@ class CorrectionPage(QWidget):
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle(title)
         msg.setText(text)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
         msg.setStyleSheet(
             "QLabel{color:black;font:9pt Arial;}"
             "QPushButton{"
