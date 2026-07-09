@@ -2,7 +2,10 @@
 SpectraSoft — Job Selection Menu
 
 Currently implemented:
+- 1-Point Recalibration
+- 2-Point Recalibration
 - INT.1 Raw Intensity
+- INT.2 Drift Corrected
 - INT.2 for Target
 """
 
@@ -65,7 +68,7 @@ class JobSelectionPage(QWidget):
 
         instruction = QLabel(
             "Select an analytical job.\n"
-            "Available now: INT.1 Raw Intensity and INT.2 for Target."
+            "Available now: Job 2, Job 3, Job 5, Job 6, and Job 8."
         )
         instruction.setAlignment(Qt.AlignmentFlag.AlignCenter)
         instruction.setStyleSheet(
@@ -84,7 +87,7 @@ class JobSelectionPage(QWidget):
             ("2-Point Recalibration", self._open_job3),
             ("Master Curve Recalibration", None),
             ("INT.1 Raw Intensity", self._open_job5),
-            ("INT.2 Drift Corrected", None),
+            ("INT.2 Drift Corrected", self._open_job6),
             ("INT.2 for Working Curve", None),
             ("INT.2 for Target", self._open_job8),
             ("Content Analysis", None),
@@ -178,50 +181,24 @@ class JobSelectionPage(QWidget):
         root.addWidget(btn_bar)
 
     # =========================================================================
-    # Actions
+    # Open Jobs
     # =========================================================================
 
-    def _open_job5(self):
+    def _open_job2(self):
         gid, gname = self._get_current_group()
 
         if gid is None:
-            QMessageBox.warning(
-                self,
-                "No Group Selected",
-                "Please select an analytical group first."
-            )
+            self._warn_no_group()
             return
 
-        from ui.analysis.analysis_run_job5 import Job5RunPage
+        from ui.analysis.analysis_run_job2 import Job2RecalPage
 
         self.main_window.set_right_widget(
-            Job5RunPage(
+            Job2RecalPage(
                 self.main_window,
                 gid,
                 gname,
-                "5"
-            )
-        )
-
-    def _open_job8(self):
-        gid, gname = self._get_current_group()
-
-        if gid is None:
-            QMessageBox.warning(
-                self,
-                "No Group Selected",
-                "Please select an analytical group first."
-            )
-            return
-
-        from ui.analysis.analysis_run_job8 import Job8RunPage
-
-        self.main_window.set_right_widget(
-            Job8RunPage(
-                self.main_window,
-                gid,
-                gname,
-                "8"
+                "2"
             )
         )
 
@@ -229,11 +206,7 @@ class JobSelectionPage(QWidget):
         gid, gname = self._get_current_group()
 
         if gid is None:
-            QMessageBox.warning(
-                self,
-                "No Group Selected",
-                "Please select an analytical group first."
-            )
+            self._warn_no_group()
             return
 
         from ui.analysis.analysis_run_job3 import Job3RecalPage
@@ -247,26 +220,69 @@ class JobSelectionPage(QWidget):
             )
         )
 
-    def _open_job2(self):
+    def _open_job5(self):
         gid, gname = self._get_current_group()
 
         if gid is None:
-            QMessageBox.warning(
-                self,
-                "No Group Selected",
-                "Please select an analytical group first."
-            )
+            self._warn_no_group()
             return
 
-        from ui.analysis.analysis_run_job2 import Job2RecalPage
+        from ui.analysis.analysis_run_job5 import Job5RunPage
 
         self.main_window.set_right_widget(
-            Job2RecalPage(
+            Job5RunPage(
                 self.main_window,
                 gid,
                 gname,
-                "2"
+                "5"
             )
+        )
+
+    def _open_job6(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.analysis.analysis_run_job6 import Job6RunPage
+
+        self.main_window.set_right_widget(
+            Job6RunPage(
+                self.main_window,
+                gid,
+                gname,
+                "6"
+            )
+        )
+
+    def _open_job8(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.analysis.analysis_run_job8 import Job8RunPage
+
+        self.main_window.set_right_widget(
+            Job8RunPage(
+                self.main_window,
+                gid,
+                gname,
+                "8"
+            )
+        )
+
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+
+    def _warn_no_group(self):
+        QMessageBox.warning(
+            self,
+            "No Group Selected",
+            "Please select an analytical group first."
         )
 
     def _get_current_group(self):
