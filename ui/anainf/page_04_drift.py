@@ -1,47 +1,33 @@
 """
 SpectraSoft — Page 4: Drift Correction Target Values
 
-This page stores the "Gold Standard" target intensities for recalibration
-samples, as well as the drift correction coefficients (α, β, k).
+Manual-style Page 4 table:
 
-Fields:
-- H_Name: One-character name for the High standard (e.g., "A")
-- H_Target: Target intensity for the High standard (0.0000)
-- L_Name: One-character name for the Low standard (e.g., "B")
-- L_Target: Target intensity for the Low standard (0.0000)
-- K_Name: One-character name for the 1-point standard (e.g., "C")
-- K_Target: Target intensity for the 1-point standard (0.0000)
-- α (Alpha): Drift correction slope (1.0 = no correction)
-- β (Beta): Drift correction intercept (0.0 = no correction)
-- k (K-coeff): 1-point correction factor (1.0 = no correction)
+AR-No. | NAME | H | L | K | H Target | L Target | K Target | α | β | k
 
-Rules:
-- Sample names must be a single character (A-Z)
-- Targets are initially 0.0; set via Job 8 (INT.2 for Target) or manual entry
-- α, β, k are calculated during recalibration (Job 3) and auto-filed
-- All coefficients default to no correction (α=1, β=0, k=1)
+Rows are generated from Page 3 channel information.
 
-Saved JSON example:
-{
-    "h_sample": "A",
-    "l_sample": "B",
-    "k_sample": "C",
-    "h_target": 0.8500,
-    "l_target": 0.1500,
-    "k_target": 0.5000,
-    "alpha": 1.0,
-    "beta": 0.0,
-    "k_coeff": 1.0
-}
+Important:
+- No PDF/example target values are inserted automatically.
+- H, L, and K sample names are optional.
+- H, L, and K sample names are always stored in uppercase when entered.
+- Internal Standard anchor rows default to H=L=K="*" and neutral drift values.
+- Rows marked with "*" are skipped by Job 8 target filing.
+- H Target, L Target, and K Target default to 0.00000.
+- α defaults to 1.0000.
+- β defaults to 0.00000.
+- k defaults to 1.0000.
+- All cells are editable for now.
+- Later, Job 8 / recalibration jobs may auto-file values here.
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QLineEdit, QPushButton, QFrame,
-    QMessageBox, QScrollArea
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QPushButton, QFrame, QMessageBox,
+    QTableWidget, QTableWidgetItem, QAbstractItemView,
+    QHeaderView, QSizePolicy
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
@@ -49,11 +35,41 @@ from core.models import AnalyticalGroup
 
 class DriftCorrectionPage(QWidget):
 
+    COL_AR = 0
+    COL_NAME = 1
+    COL_H = 2
+    COL_L = 3
+    COL_K = 4
+    COL_H_TARGET = 5
+    COL_L_TARGET = 6
+    COL_K_TARGET = 7
+    COL_ALPHA = 8
+    COL_BETA = 9
+    COL_K_COEFF = 10
+
+    HEADERS = [
+        "AR-No.",
+        "NAME",
+        "H",
+        "L",
+        "K",
+        "H Target",
+        "L Target",
+        "K Target",
+        "α",
+        "β",
+        "k",
+    ]
+
+    SAMPLE_COLUMNS = {COL_H, COL_L, COL_K}
+
     def __init__(self, main_window, group_id: int, group_name: str):
         super().__init__()
+
         self.main_window = main_window
         self.group_id = group_id
         self.group_name = group_name
+        self._updating_table = False
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -64,7 +80,7 @@ class DriftCorrectionPage(QWidget):
         self._load()
 
     # =========================================================================
-    # UI Construction
+    # UI
     # =========================================================================
 
     def _build_ui(self):
@@ -73,7 +89,7 @@ class DriftCorrectionPage(QWidget):
         root.setSpacing(0)
 
         # ── Title Bar ──────────────────────────────────────────────────────
-        bar = QLabel(f"Drift Correction - {self.group_name}")
+        bar = QLabel(f"Drift Correction Target Values - {self.group_name}")
         bar.setFixedHeight(24)
         bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -89,30 +105,16 @@ class DriftCorrectionPage(QWidget):
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet("background:#d4d0c8;")
         root.addWidget(outer, stretch=1)
 
-        ol = QVBoxLayout(outer)
-        ol.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border:none;")
-        ol.addWidget(scroll)
-
-        inner = QWidget()
-        inner.setAutoFillBackground(True)
-        ip = inner.palette()
-        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
-        inner.setPalette(ip)
-        scroll.setWidget(inner)
-
-        ml = QVBoxLayout(inner)
-        ml.setContentsMargins(20, 16, 20, 12)
-        ml.setSpacing(8)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(14, 14, 14, 10)
+        outer_layout.setSpacing(8)
 
         # ── Table Title ──────────────────────────────────────────────────
         title = QLabel("DRIFT CORRECTION TARGET VALUES")
+        title.setFixedHeight(24)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
             "QLabel{"
@@ -123,183 +125,88 @@ class DriftCorrectionPage(QWidget):
             "padding:3px 0px;"
             "}"
         )
-        ml.addWidget(title)
+        outer_layout.addWidget(title)
 
-        # ── Excel-Style Table ───────────────────────────────────────────
-        table = QFrame()
-        table.setStyleSheet(
-            "QFrame{"
+        # ── Table ────────────────────────────────────────────────────────
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
+
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
+
+        self.table.setStyleSheet(
+            "QTableWidget{"
             "background:white;"
+            "color:black;"
             "border:1px solid #888888;"
+            "gridline-color:#888888;"
+            "font:9pt Arial;"
+            "}"
+            "QTableWidget::item{"
+            "border:1px solid #888888;"
+            "padding:0px 4px;"
+            "color:black;"
+            "background:white;"
+            "}"
+            "QHeaderView::section{"
+            "background:#0078d7;"
+            "color:white;"
+            "font:bold 9pt Arial;"
+            "border:1px solid #888888;"
+            "padding:2px 4px;"
+            "}"
+            "QTableWidget::item:selected{"
+            "background:#cce5ff;"
+            "color:black;"
             "}"
         )
-        table.setFixedHeight(162)
 
-        grid = QGridLayout(table)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(0)
-
-        # ==================================================================
-        # Column Sizes
-        # ==================================================================
-        col_label = 70       # "Sample" / "H (High)" etc.
-        col_name = 80        # Name field
-        col_target = 100     # Target
-        col_coeff = 100      # α, β, k
-        row_h = 27
-
-        # ==================================================================
-        # Helper: Blue Header Label
-        # ==================================================================
-        def hdr(text, w=col_label):
-            lbl = QLabel(text)
-            lbl.setFixedSize(w, row_h)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(
-                "QLabel{"
-                "background:#0078d7;"
-                "color:white;"
-                "font:bold 9pt Arial;"
-                "border:1px solid #888888;"
-                "padding:1px 2px;"
-                "}"
-            )
-            return lbl
-
-        # ==================================================================
-        # Helper: Blue Top-Left Corner
-        # ==================================================================
-        def corner():
-            lbl = QLabel("")
-            lbl.setFixedSize(col_label, row_h)
-            lbl.setStyleSheet(
-                "QLabel{"
-                "background:#0078d7;"
-                "border:1px solid #888888;"
-                "}"
-            )
-            return lbl
-
-        # ==================================================================
-        # Helper: Row Label
-        # ==================================================================
-        def row_lbl(text):
-            lbl = QLabel(text)
-            lbl.setFixedSize(col_label, row_h)
-            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            lbl.setStyleSheet(
-                "QLabel{"
-                "background:#d4d0c8;"
-                "color:black;"
-                "font:9pt Arial;"
-                "border:1px solid #888888;"
-                "padding:0px 4px;"
-                "}"
-            )
-            return lbl
-
-        # ==================================================================
-        # Helper: Editable Cell (with validator)
-        # ==================================================================
-        def make_edit(default="", width=col_name, align=Qt.AlignmentFlag.AlignCenter):
-            e = QLineEdit(str(default))
-            e.setFixedSize(width, row_h)
-            e.setAlignment(align)
-            e.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            return e
-
-        # ==================================================================
-        # Helper: Read-Only Cell
-        # ==================================================================
-        def ro(width=col_name):
-            e = QLineEdit("")
-            e.setFixedSize(width, row_h)
-            e.setReadOnly(True)
-            e.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            e.setStyleSheet(
-                "QLineEdit{"
-                "background:#f0ece4;"
-                "color:#999999;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            return e
-
-        # ==================================================================
-        # ROW 0: Headers (all blue)
-        # ==================================================================
-        grid.addWidget(corner(), 0, 0)
-        grid.addWidget(hdr("Name", col_name), 0, 1)
-        grid.addWidget(hdr("Target", col_target), 0, 2)
-        grid.addWidget(hdr("α (Alpha)", col_coeff), 0, 3)
-        grid.addWidget(hdr("β (Beta)", col_coeff), 0, 4)
-        grid.addWidget(hdr("k", col_coeff), 0, 5)
-
-        # ==================================================================
-        # ROW 1: H (High)
-        # ==================================================================
-        grid.addWidget(row_lbl("H (High)"), 1, 0)
-        self.h_name = make_edit("", col_name)
-        self.h_target = make_edit("0.0000", col_target)
-        self.h_alpha = make_edit("1.0000", col_coeff)
-        self.h_beta = make_edit("0.0000", col_coeff)
-        self.h_k = make_edit("1.0000", col_coeff)
-        grid.addWidget(self.h_name, 1, 1)
-        grid.addWidget(self.h_target, 1, 2)
-        grid.addWidget(self.h_alpha, 1, 3)
-        grid.addWidget(self.h_beta, 1, 4)
-        grid.addWidget(self.h_k, 1, 5)
-
-        # ==================================================================
-        # ROW 2: L (Low)
-        # ==================================================================
-        grid.addWidget(row_lbl("L (Low)"), 2, 0)
-        self.l_name = make_edit("", col_name)
-        self.l_target = make_edit("0.0000", col_target)
-        self.l_alpha = ro(col_coeff)
-        self.l_beta = ro(col_coeff)
-        self.l_k = ro(col_coeff)
-        grid.addWidget(self.l_name, 2, 1)
-        grid.addWidget(self.l_target, 2, 2)
-        grid.addWidget(self.l_alpha, 2, 3)
-        grid.addWidget(self.l_beta, 2, 4)
-        grid.addWidget(self.l_k, 2, 5)
-
-        # ==================================================================
-        # ROW 3: K (1-Point)
-        # ==================================================================
-        grid.addWidget(row_lbl("K (1-pt)"), 3, 0)
-        self.k_name = make_edit("", col_name)
-        self.k_target = make_edit("0.0000", col_target)
-        self.k_alpha = ro(col_coeff)
-        self.k_beta = ro(col_coeff)
-        self.k_k = ro(col_coeff)
-        grid.addWidget(self.k_name, 3, 1)
-        grid.addWidget(self.k_target, 3, 2)
-        grid.addWidget(self.k_alpha, 3, 3)
-        grid.addWidget(self.k_beta, 3, 4)
-        grid.addWidget(self.k_k, 3, 5)
-
-        # ==================================================================
-        # ROW 4: Informational notes
-        # ==================================================================
-        note = QLabel(
-            "Note: H and L are for 2-point recalibration; K is for 1-point recalibration.\n"
-            "Targets are set via Job 8 (INT.2 for Target). α, β, k are calculated during recalibration (Job 3)."
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed
         )
+        self.table.verticalHeader().setDefaultSectionSize(27)
+
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionsClickable(False)
+        header.setHighlightSections(False)
+
+        self.table.setColumnWidth(self.COL_AR, 60)
+        self.table.setColumnWidth(self.COL_NAME, 80)
+        self.table.setColumnWidth(self.COL_H, 90)
+        self.table.setColumnWidth(self.COL_L, 90)
+        self.table.setColumnWidth(self.COL_K, 90)
+        self.table.setColumnWidth(self.COL_H_TARGET, 95)
+        self.table.setColumnWidth(self.COL_L_TARGET, 95)
+        self.table.setColumnWidth(self.COL_K_TARGET, 95)
+        self.table.setColumnWidth(self.COL_ALPHA, 85)
+        self.table.setColumnWidth(self.COL_BETA, 85)
+        self.table.setColumnWidth(self.COL_K_COEFF, 85)
+
+        for col in range(len(self.HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        self.table.itemChanged.connect(self._on_item_changed)
+
+        outer_layout.addWidget(self.table, stretch=1)
+
+        # ── Help Note ─────────────────────────────────────────────────────
+        note = QLabel(
+            "Rows are generated from Page 3. H, L, and K sample names are optional "
+            "and are stored in uppercase when entered. Internal Standard rows use '*' "
+            "and are skipped by Job 8. Targets default to 0.00000; "
+            "α=1.0000, β=0.00000, k=1.0000."
+        )
+        note.setFixedHeight(38)
         note.setWordWrap(True)
-        note.setFixedHeight(50)
-        note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         note.setStyleSheet(
             "QLabel{"
             "background:#f0ece4;"
@@ -309,23 +216,43 @@ class DriftCorrectionPage(QWidget):
             "padding:4px 6px;"
             "}"
         )
-        grid.addWidget(note, 4, 0, 1, 6)
+        outer_layout.addWidget(note)
 
-        ml.addWidget(table)
-        ml.addStretch()
-
-        # ── Bottom Nav ──────────────────────────────────────────────────
+        # ── Bottom Navigation ─────────────────────────────────────────────
         btn_bar = QWidget()
         btn_bar.setAutoFillBackground(True)
-        bbp = btn_bar.palette()
-        bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
-        btn_bar.setPalette(bbp)
+        btn_bar.setStyleSheet("background:#d4d0c8;")
 
-        bbl = QHBoxLayout(btn_bar)
-        bbl.setContentsMargins(12, 4, 12, 8)
-        bbl.setSpacing(4)
+        nav = QHBoxLayout(btn_bar)
+        nav.setContentsMargins(12, 4, 12, 8)
+        nav.setSpacing(4)
 
-        btn_style = (
+        for text, slot in [
+            ("OK", self._on_ok),
+            ("Next", self._on_next),
+            ("Previous", self._on_pre),
+            ("Print", self._on_print),
+        ]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(self._button_style())
+            btn.clicked.connect(slot)
+            nav.addWidget(btn)
+
+        nav.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(self._button_style())
+        cancel_btn.clicked.connect(self._on_cancel)
+        nav.addWidget(cancel_btn)
+
+        root.addWidget(btn_bar)
+
+    # =========================================================================
+    # Styles
+    # =========================================================================
+
+    def _button_style(self) -> str:
+        return (
             "QPushButton{"
             "background:#d4d0c8;"
             "color:black;"
@@ -339,85 +266,294 @@ class DriftCorrectionPage(QWidget):
             "}"
         )
 
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
-        ]:
-            b = QPushButton(txt)
-            b.setStyleSheet(btn_style)
-            b.clicked.connect(slot)
-            bbl.addWidget(b)
+    # =========================================================================
+    # Uppercase Handling
+    # =========================================================================
 
-        bbl.addStretch()
+    def _on_item_changed(self, item: QTableWidgetItem):
+        """
+        Force H, L, and K sample names to uppercase when entered.
+        Empty values are allowed.
+        """
+        if self._updating_table:
+            return
 
-        canc = QPushButton("9:Cancel")
-        canc.setStyleSheet(btn_style)
-        canc.clicked.connect(self._on_cancel)
-        bbl.addWidget(canc)
+        if item.column() not in self.SAMPLE_COLUMNS:
+            return
 
-        root.addWidget(btn_bar)
+        current = item.text()
+        upper = current.upper()
+
+        if current != upper:
+            self._updating_table = True
+            item.setText(upper)
+            self._updating_table = False
+
+    # =========================================================================
+    # Page 3 Source Rows
+    # =========================================================================
+
+    def _rows_from_page3(self) -> list:
+        """
+        Build Page 4 rows from Page 3 active analytical rows.
+
+        AR-No. and NAME are filled from Page 3.
+        H/L/K are optional and start blank for normal rows.
+
+        Internal Standard anchor rows:
+        - Identified when this row's ITG is referenced by another row's ise_ref.
+        - Its own ise_ref is 0.
+        - Defaults to H=L=K="*".
+        - Targets stay 0.00000.
+        - Coefficients stay neutral.
+        """
+        session = get_session()
+
+        try:
+            g = session.get(AnalyticalGroup, self.group_id)
+
+            if not g or not g.page_03_channel:
+                return []
+
+            page3_rows = g.page_03_channel
+
+            # ITGs referenced as internal standard by other elements.
+            referenced_itgs = set()
+
+            for entry in page3_rows:
+                try:
+                    ise_ref = int(entry.get("ise_ref", 0))
+                except (TypeError, ValueError):
+                    ise_ref = 0
+
+                if ise_ref > 0:
+                    referenced_itgs.add(str(ise_ref))
+
+            rows = []
+
+            for idx, entry in enumerate(page3_rows):
+                name = str(entry.get("name", "")).strip()
+                ele = str(entry.get("ele", "")).strip()
+                itg = str(entry.get("itg", "")).strip()
+
+                display_name = name or ele or (f"ITG{itg}" if itg else "")
+
+                if not display_name:
+                    continue
+
+                try:
+                    own_ise_ref = int(entry.get("ise_ref", 0))
+                except (TypeError, ValueError):
+                    own_ise_ref = 0
+
+                is_internal_standard_anchor = (
+                    itg in referenced_itgs and own_ise_ref == 0
+                )
+
+                if is_internal_standard_anchor:
+                    h_sample = "*"
+                    l_sample = "*"
+                    k_sample = "*"
+                else:
+                    h_sample = ""
+                    l_sample = ""
+                    k_sample = ""
+
+                rows.append({
+                    "ar_no": str(idx + 1),
+                    "name": display_name,
+
+                    # Optional sample names.
+                    # Internal standard anchor rows use "*" as skip marker.
+                    "h_sample": h_sample,
+                    "l_sample": l_sample,
+                    "k_sample": k_sample,
+
+                    # Day-1 target values unknown until Job 8/manual entry.
+                    "h_target": "0.00000",
+                    "l_target": "0.00000",
+                    "k_target": "0.00000",
+
+                    # Neutral drift correction state.
+                    "alpha": "1.0000",
+                    "beta": "0.00000",
+                    "k_coeff": "1.0000",
+                })
+
+            return rows
+
+        finally:
+            session.close()
 
     # =========================================================================
     # Data Operations
     # =========================================================================
 
+    def _populate_table(self, rows: list):
+        self._updating_table = True
+
+        self.table.setRowCount(len(rows))
+
+        for row_idx, row_data in enumerate(rows):
+            self._set_cell(row_idx, self.COL_AR, str(row_data.get("ar_no", row_idx + 1)))
+            self._set_cell(row_idx, self.COL_NAME, str(row_data.get("name", "")))
+
+            self._set_cell(row_idx, self.COL_H, self._upper_text(row_data.get("h_sample", "")))
+            self._set_cell(row_idx, self.COL_L, self._upper_text(row_data.get("l_sample", "")))
+            self._set_cell(row_idx, self.COL_K, self._upper_text(row_data.get("k_sample", "")))
+
+            # Show default target values even when saved value is blank.
+            self._set_cell(
+                row_idx,
+                self.COL_H_TARGET,
+                self._normalize_float_text(row_data.get("h_target", ""), "0.00000", 5)
+            )
+            self._set_cell(
+                row_idx,
+                self.COL_L_TARGET,
+                self._normalize_float_text(row_data.get("l_target", ""), "0.00000", 5)
+            )
+            self._set_cell(
+                row_idx,
+                self.COL_K_TARGET,
+                self._normalize_float_text(row_data.get("k_target", ""), "0.00000", 5)
+            )
+
+            # Show neutral drift correction defaults even when saved value is blank.
+            self._set_cell(
+                row_idx,
+                self.COL_ALPHA,
+                self._normalize_float_text(row_data.get("alpha", ""), "1.0000", 4)
+            )
+            self._set_cell(
+                row_idx,
+                self.COL_BETA,
+                self._normalize_float_text(row_data.get("beta", ""), "0.00000", 5)
+            )
+            self._set_cell(
+                row_idx,
+                self.COL_K_COEFF,
+                self._normalize_float_text(row_data.get("k_coeff", ""), "1.0000", 4)
+            )
+
+        self.table.resizeRowsToContents()
+
+        self._updating_table = False
+
+    def _set_cell(self, row: int, col: int, text: str):
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        item.setFlags(
+            Qt.ItemFlag.ItemIsSelectable |
+            Qt.ItemFlag.ItemIsEnabled |
+            Qt.ItemFlag.ItemIsEditable
+        )
+
+        self.table.setItem(row, col, item)
+
     def _collect(self) -> dict:
+        rows = []
+
+        for row in range(self.table.rowCount()):
+            row_data = {
+                "ar_no": self._cell_text(row, self.COL_AR),
+                "name": self._cell_text(row, self.COL_NAME),
+                "h_sample": self._upper_text(self._cell_text(row, self.COL_H)),
+                "l_sample": self._upper_text(self._cell_text(row, self.COL_L)),
+                "k_sample": self._upper_text(self._cell_text(row, self.COL_K)),
+                "h_target": self._normalize_float_text(
+                    self._cell_text(row, self.COL_H_TARGET),
+                    "0.00000",
+                    5
+                ),
+                "l_target": self._normalize_float_text(
+                    self._cell_text(row, self.COL_L_TARGET),
+                    "0.00000",
+                    5
+                ),
+                "k_target": self._normalize_float_text(
+                    self._cell_text(row, self.COL_K_TARGET),
+                    "0.00000",
+                    5
+                ),
+                "alpha": self._normalize_float_text(
+                    self._cell_text(row, self.COL_ALPHA),
+                    "1.0000",
+                    4
+                ),
+                "beta": self._normalize_float_text(
+                    self._cell_text(row, self.COL_BETA),
+                    "0.00000",
+                    5
+                ),
+                "k_coeff": self._normalize_float_text(
+                    self._cell_text(row, self.COL_K_COEFF),
+                    "1.0000",
+                    4
+                ),
+            }
+
+            rows.append(row_data)
+
         return {
-            "h_sample": self.h_name.text().strip(),
-            "l_sample": self.l_name.text().strip(),
-            "k_sample": self.k_name.text().strip(),
-            "h_target": self._to_float(self.h_target.text()),
-            "l_target": self._to_float(self.l_target.text()),
-            "k_target": self._to_float(self.k_target.text()),
-            "alpha": self._to_float(self.h_alpha.text()),
-            "beta": self._to_float(self.h_beta.text()),
-            "k_coeff": self._to_float(self.h_k.text()),
+            "rows": rows
         }
 
-    def _apply(self, d: dict):
-        if not d:
-            d = {}
-        self.h_name.setText(d.get("h_sample", ""))
-        self.l_name.setText(d.get("l_sample", ""))
-        self.k_name.setText(d.get("k_sample", ""))
-        self.h_target.setText(f"{d.get('h_target', 0.0):.4f}")
-        self.l_target.setText(f"{d.get('l_target', 0.0):.4f}")
-        self.k_target.setText(f"{d.get('k_target', 0.0):.4f}")
-        self.h_alpha.setText(f"{d.get('alpha', 1.0):.4f}")
-        self.h_beta.setText(f"{d.get('beta', 0.0):.4f}")
-        self.h_k.setText(f"{d.get('k_coeff', 1.0):.4f}")
+    def _cell_text(self, row: int, col: int) -> str:
+        item = self.table.item(row, col)
+        return item.text().strip() if item else ""
 
-    def _to_float(self, text: str) -> float:
+    def _upper_text(self, value) -> str:
+        return str(value or "").strip().upper()
+
+    def _normalize_float_text(self, text: str, default: str, decimals: int) -> str:
+        raw = str(text or "").strip()
+
+        if raw == "":
+            raw = default
+
         try:
-            return float(text.strip()) if text.strip() else 0.0
+            value = float(raw)
+            return f"{value:.{decimals}f}"
         except ValueError:
-            return 0.0
+            return default
 
     def _save(self):
+        data = self._collect()
+
         session = get_session()
+
         try:
             g = session.get(AnalyticalGroup, self.group_id)
+
             if g:
-                g.page_04_drift = self._collect()
+                g.page_04_drift = data
                 session.commit()
+
         finally:
             session.close()
 
     def _load(self):
         session = get_session()
+
         try:
             g = session.get(AnalyticalGroup, self.group_id)
+
             if g and g.page_04_drift:
-                self._apply(g.page_04_drift)
-            else:
-                self._apply({})
+                data = g.page_04_drift
+
+                if isinstance(data, dict) and isinstance(data.get("rows"), list):
+                    self._populate_table(data["rows"])
+                    return
+
         finally:
             session.close()
 
+        self._populate_table(self._rows_from_page3())
+
     # =========================================================================
-    # Message Box Helper
+    # Message Helpers
     # =========================================================================
 
     def _show_msg(self, title, text, icon=QMessageBox.Icon.Information):
@@ -446,7 +582,10 @@ class DriftCorrectionPage(QWidget):
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle(title)
         msg.setText(text)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
         msg.setStyleSheet(
             "QLabel{color:black;font:9pt Arial;}"
             "QPushButton{"
@@ -469,20 +608,23 @@ class DriftCorrectionPage(QWidget):
 
     def _on_ok(self):
         self._save()
+        self._load()
         self._show_msg("Saved", "Drift correction data saved successfully.")
 
     def _on_next(self):
         self._save()
+
         try:
             from ui.anainf.page_05_working_curve import WorkingCurvePage
             self.main_window.set_right_widget(
                 WorkingCurvePage(self.main_window, self.group_id, self.group_name)
             )
         except ImportError:
-            self._show_msg("Next Page", "Page 5 (Working Curve) is not built yet.")
+            self._show_msg("Next Page", "Page 5 is not built yet.")
 
     def _on_pre(self):
         self._save()
+
         try:
             from ui.anainf.page_03_channel import ChannelPage
             self.main_window.set_right_widget(
@@ -495,6 +637,9 @@ class DriftCorrectionPage(QWidget):
         self._show_msg("Print", "Print coming soon.")
 
     def _on_cancel(self):
-        if self._show_question("Cancel", "Discard changes?") == QMessageBox.StandardButton.Yes:
+        if self._show_question(
+            "Cancel",
+            "Discard changes?"
+        ) == QMessageBox.StandardButton.Yes:
             self._load()
             self.main_window._show_home_content()

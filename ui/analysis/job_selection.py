@@ -1,17 +1,9 @@
 """
 SpectraSoft — Job Selection Menu
 
-Only Job 5: INT.1 Raw Intensity is currently available.
-
-This page allows the user to choose an analysis job.
 Currently implemented:
 - INT.1 Raw Intensity
-
-Not implemented yet:
-- Recalibration jobs
-- Drift corrected intensity
-- Target intensity
-- Content analysis
+- INT.2 for Target
 """
 
 from PyQt6.QtWidgets import (
@@ -22,7 +14,7 @@ from PyQt6.QtCore import Qt
 
 
 class JobSelectionPage(QWidget):
-    """Job selection menu. Only INT.1 Raw Intensity is enabled."""
+    """Job selection menu."""
 
     def __init__(self, main_window):
         super().__init__()
@@ -71,10 +63,9 @@ class JobSelectionPage(QWidget):
         ol.setContentsMargins(20, 20, 20, 20)
         ol.setSpacing(14)
 
-        # ── Instruction Label ─────────────────────────────────────────────
         instruction = QLabel(
             "Select an analytical job.\n"
-            "Currently available: INT.1 Raw Intensity."
+            "Available now: INT.1 Raw Intensity and INT.2 for Target."
         )
         instruction.setAlignment(Qt.AlignmentFlag.AlignCenter)
         instruction.setStyleSheet(
@@ -88,17 +79,16 @@ class JobSelectionPage(QWidget):
         )
         ol.addWidget(instruction)
 
-        # ── Job Buttons ──────────────────────────────────────────────────
         jobs = [
-            ("1-Point Recalibration", False),
-            ("2-Point Recalibration", False),
-            ("Master Curve Recalibration", False),
-            ("INT.1 Raw Intensity", True),
-            ("INT.2 Drift Corrected", False),
-            ("INT.2 for Working Curve", False),
-            ("INT.2 for Target", False),
-            ("Content Analysis", False),
-            ("Special 3-Time Analysis", False),
+            ("1-Point Recalibration", None),
+            ("2-Point Recalibration", None),
+            ("Master Curve Recalibration", None),
+            ("INT.1 Raw Intensity", self._open_job5),
+            ("INT.2 Drift Corrected", None),
+            ("INT.2 for Working Curve", None),
+            ("INT.2 for Target", self._open_job8),
+            ("Content Analysis", None),
+            ("Special 3-Time Analysis", None),
         ]
 
         grid = QGridLayout()
@@ -131,12 +121,12 @@ class JobSelectionPage(QWidget):
             "}"
         )
 
-        for index, (name, enabled) in enumerate(jobs):
+        for index, (name, slot) in enumerate(jobs):
             btn = QPushButton(name)
 
-            if enabled:
+            if slot:
                 btn.setStyleSheet(btn_style)
-                btn.clicked.connect(self._open_job5)
+                btn.clicked.connect(slot)
             else:
                 btn.setStyleSheet(btn_disabled_style)
                 btn.setEnabled(False)
@@ -144,7 +134,6 @@ class JobSelectionPage(QWidget):
 
             grid.addWidget(btn, index // 3, index % 3)
 
-        # Center grid
         wrapper = QHBoxLayout()
         wrapper.addStretch()
         wrapper.addLayout(grid)
@@ -193,7 +182,6 @@ class JobSelectionPage(QWidget):
     # =========================================================================
 
     def _open_job5(self):
-        """Open Job 5: INT.1 Raw Intensity."""
         gid, gname = self._get_current_group()
 
         if gid is None:
@@ -215,8 +203,29 @@ class JobSelectionPage(QWidget):
             )
         )
 
+    def _open_job8(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            QMessageBox.warning(
+                self,
+                "No Group Selected",
+                "Please select an analytical group first."
+            )
+            return
+
+        from ui.analysis.analysis_run_job8 import Job8RunPage
+
+        self.main_window.set_right_widget(
+            Job8RunPage(
+                self.main_window,
+                gid,
+                gname,
+                "8"
+            )
+        )
+
     def _get_current_group(self):
-        """Return currently selected analytical group from the left panel."""
         if hasattr(self.main_window, "_group_panel"):
             if hasattr(self.main_window._group_panel, "_selected"):
                 return self.main_window._group_panel._selected()
@@ -224,7 +233,6 @@ class JobSelectionPage(QWidget):
         return None, None
 
     def _on_cancel(self):
-        """Return to home/default content."""
         self.main_window._show_home_content()
 
     def wants_fullscreen(self) -> bool:
