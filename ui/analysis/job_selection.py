@@ -80,8 +80,8 @@ class JobSelectionPage(QWidget):
         ol.addWidget(instruction)
 
         jobs = [
-            ("1-Point Recalibration", None),
-            ("2-Point Recalibration", None),
+            ("1-Point Recalibration", self._open_job2),
+            ("2-Point Recalibration", self._open_job3),
             ("Master Curve Recalibration", None),
             ("INT.1 Raw Intensity", self._open_job5),
             ("INT.2 Drift Corrected", None),
@@ -222,6 +222,50 @@ class JobSelectionPage(QWidget):
                 gid,
                 gname,
                 "8"
+            )
+        )
+
+    def _open_job3(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            QMessageBox.warning(
+                self,
+                "No Group Selected",
+                "Please select an analytical group first."
+            )
+            return
+
+        from ui.analysis.analysis_run_job3 import Job3RecalPage
+
+        self.main_window.set_right_widget(
+            Job3RecalPage(
+                self.main_window,
+                gid,
+                gname,
+                "3"
+            )
+        )
+
+    def _open_job2(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            QMessageBox.warning(
+                self,
+                "No Group Selected",
+                "Please select an analytical group first."
+            )
+            return
+
+        from ui.analysis.analysis_run_job2 import Job2RecalPage
+
+        self.main_window.set_right_widget(
+            Job2RecalPage(
+                self.main_window,
+                gid,
+                gname,
+                "2"
             )
         )
 
