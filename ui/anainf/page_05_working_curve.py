@@ -1,56 +1,87 @@
 """
 SpectraSoft — Page 5: Working Curve Coefficients & Channel Skip
 
-This page stores the polynomial coefficients (a, b, c, d) used to convert
-drift‑corrected intensity (INT.2) into concentration.
+This page stores polynomial coefficients used to convert drift-corrected
+intensity INT.2 into concentration.
 
-Columns (one row per element from Page 3):
-- ELE: Element name (read‑only, from Page 3)
-- NAME: Custom name (read‑only, from Page 3)
-- a: Cubic coefficient (editable)
-- b: Quadratic coefficient (editable)
-- c: Linear coefficient (editable)
-- d: Intercept (editable)
-- 100%: Normalization to 100% (Y/N dropdown)
-- Skip Point: Channel skip threshold (editable)
+Formula:
+    C = a*I^3 + b*I^2 + c*I + d
 
-Rules:
-- Coefficients are typically auto‑filled by Regression module (Section 7)
-- User can also enter them manually
-- 100% Correction: Y = normalize to 100%, N = no normalization
-- Skip Point: concentration where switching between two wavelengths occurs
+Rows are generated from Page 3 active analytical channels.
 
-Saved JSON example:
-{
-    "coefficients": [
-        {"element": "C", "name": "C", "a": 0.0, "b": 0.00037204, "c": 1.04551920, "d": -0.07728757, "norm": "Y", "skip": 0.0},
-        ...
-    ]
-}
+Manual-style columns:
+- ELE: Element name from Page 3
+- NAME: Display/report name from Page 3
+- a: Cubic coefficient
+- b: Quadratic coefficient
+- c: Linear coefficient
+- d: Intercept
+- Y/N: Working curve / 100% correction flag
+        I = Internal Standard
+        Y = 100% correction active
+        N = 100% correction inactive
+        blank = unset/manual
+- SKIP: Channel skip marker, normally blank or "+"
+- POINT: Skip point / threshold, default 0.00000
+
+Important:
+- No PDF/example coefficient values are inserted automatically.
+- Neutral/default equation is:
+      a = 0.00000000
+      b = 0.00000000
+      c = 1.00000000
+      d = 0.00000000
+  which means C = I.
+- Coefficients are editable.
+- Y/N, SKIP, and POINT are editable.
+- Coefficients are usually auto-filed later by Regression module.
+- Previous saved coefficients are backed up before each save.
+- Saved coefficients are tied to the selected Analytical Group.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame, QScrollArea, QMessageBox,
+    QPushButton, QFrame, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QComboBox, QLineEdit
+    QAbstractItemView
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QDoubleValidator
 
 from core.database import get_session
 from core.models import AnalyticalGroup
 
-MAX_ELEMENTS = 32
-
 
 class WorkingCurvePage(QWidget):
 
+    COL_ELE = 0
+    COL_NAME = 1
+    COL_A = 2
+    COL_B = 3
+    COL_C = 4
+    COL_D = 5
+    COL_YN = 6
+    COL_SKIP = 7
+    COL_POINT = 8
+
+    HEADERS = [
+        "ELE",
+        "NAME",
+        "a",
+        "b",
+        "c",
+        "d",
+        "Y/N",
+        "SKIP",
+        "POINT",
+    ]
+
     def __init__(self, main_window, group_id: int, group_name: str):
         super().__init__()
+
         self.main_window = main_window
         self.group_id = group_id
         self.group_name = group_name
+        self._updating_table = False
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -61,7 +92,7 @@ class WorkingCurvePage(QWidget):
         self._load()
 
     # =========================================================================
-    # UI Construction
+    # UI
     # =========================================================================
 
     def _build_ui(self):
@@ -70,7 +101,7 @@ class WorkingCurvePage(QWidget):
         root.setSpacing(0)
 
         # ── Title Bar ──────────────────────────────────────────────────────
-        bar = QLabel(f"Working Curve - {self.group_name}")
+        bar = QLabel(f"Working Curve Coefficients - {self.group_name}")
         bar.setFixedHeight(24)
         bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -86,30 +117,16 @@ class WorkingCurvePage(QWidget):
         outer.setFrameShape(QFrame.Shape.Box)
         outer.setFrameShadow(QFrame.Shadow.Sunken)
         outer.setLineWidth(2)
-        outer.setStyleSheet("background:white;")
+        outer.setStyleSheet("background:#d4d0c8;")
         root.addWidget(outer, stretch=1)
 
-        ol = QVBoxLayout(outer)
-        ol.setContentsMargins(0, 0, 0, 0)
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(14, 14, 14, 10)
+        outer_layout.setSpacing(8)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("border:none;")
-        ol.addWidget(scroll)
-
-        inner = QWidget()
-        inner.setAutoFillBackground(True)
-        ip = inner.palette()
-        ip.setColor(inner.backgroundRole(), Qt.GlobalColor.lightGray)
-        inner.setPalette(ip)
-        scroll.setWidget(inner)
-
-        ml = QVBoxLayout(inner)
-        ml.setContentsMargins(20, 16, 20, 12)
-        ml.setSpacing(8)
-
-        # ── Table Title ──────────────────────────────────────────────────
+        # ── Page Title ───────────────────────────────────────────────────
         title = QLabel("WORKING CURVE COEFFICIENTS & CHANNEL SKIP")
+        title.setFixedHeight(24)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
             "QLabel{"
@@ -120,20 +137,156 @@ class WorkingCurvePage(QWidget):
             "padding:3px 0px;"
             "}"
         )
-        ml.addWidget(title)
+        outer_layout.addWidget(title)
 
-        # ── Single Centered Table ────────────────────────────────────────
-        self.table = self._create_table()
-        table_container = QHBoxLayout()
-        table_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        table_container.addWidget(self.table)
-        ml.addLayout(table_container)
+        # ── Help Note ────────────────────────────────────────────────────
+        note = QLabel(
+            "Y/N: I = Internal Standard, Y = 100% correction active, "
+            "N = inactive. SKIP is normally blank or '+'. POINT defaults to 0.00000."
+        )
+        note.setFixedHeight(38)
+        note.setWordWrap(True)
+        note.setStyleSheet(
+            "QLabel{"
+            "background:#f0ece4;"
+            "color:#555555;"
+            "font:9pt Arial;"
+            "border:1px solid #888888;"
+            "padding:4px 6px;"
+            "}"
+        )
+        outer_layout.addWidget(note)
 
-        # ── Control Buttons ──────────────────────────────────────────────
+        # ── Table ────────────────────────────────────────────────────────
+        self.table = QTableWidget()
+        self.table.setColumnCount(len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
+
+        self.table.setStyleSheet(
+            "QTableWidget{"
+            "background:white;"
+            "color:black;"
+            "border:1px solid #888888;"
+            "gridline-color:#888888;"
+            "font:9pt Arial;"
+            "}"
+            "QTableWidget::item{"
+            "border:1px solid #888888;"
+            "padding:0px 4px;"
+            "color:black;"
+            "background:white;"
+            "}"
+            "QHeaderView::section{"
+            "background:#0078d7;"
+            "color:white;"
+            "font:bold 9pt Arial;"
+            "border:1px solid #888888;"
+            "padding:2px 4px;"
+            "}"
+            "QTableWidget::item:selected{"
+            "background:#cce5ff;"
+            "color:black;"
+            "}"
+        )
+
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self.table.verticalHeader().setDefaultSectionSize(27)
+
+        header = self.table.horizontalHeader()
+        header.setSectionsClickable(False)
+        header.setHighlightSections(False)
+        header.setStretchLastSection(True)
+
+        self.table.setColumnWidth(self.COL_ELE, 70)
+        self.table.setColumnWidth(self.COL_NAME, 80)
+        self.table.setColumnWidth(self.COL_A, 105)
+        self.table.setColumnWidth(self.COL_B, 105)
+        self.table.setColumnWidth(self.COL_C, 105)
+        self.table.setColumnWidth(self.COL_D, 105)
+        self.table.setColumnWidth(self.COL_YN, 60)
+        self.table.setColumnWidth(self.COL_SKIP, 60)
+        self.table.setColumnWidth(self.COL_POINT, 90)
+
+        for col in range(len(self.HEADERS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        self.table.itemChanged.connect(self._on_item_changed)
+
+        outer_layout.addWidget(self.table, stretch=1)
+
+        # ── Info / Reset Row ─────────────────────────────────────────────
         ctrl_layout = QHBoxLayout()
         ctrl_layout.setSpacing(6)
 
-        btn_style = (
+        btn_reset = QPushButton("Reset Coefficients")
+        btn_reset.setStyleSheet(self._button_style())
+        btn_reset.clicked.connect(self._on_reset)
+        ctrl_layout.addWidget(btn_reset)
+
+        btn_restore = QPushButton("Restore Previous")
+        btn_restore.setStyleSheet(self._button_style())
+        btn_restore.clicked.connect(self._on_restore_previous)
+        ctrl_layout.addWidget(btn_restore)
+
+        ctrl_layout.addStretch()
+
+        info_lbl = QLabel(
+            "Coefficients are normally filed by Regression. Manual override is allowed."
+        )
+        info_lbl.setStyleSheet(
+            "QLabel{"
+            "color:#555555;"
+            "font:9pt Arial;"
+            "border:none;"
+            "background:#d4d0c8;"
+            "}"
+        )
+        ctrl_layout.addWidget(info_lbl)
+
+        outer_layout.addLayout(ctrl_layout)
+
+        # ── Bottom Navigation ────────────────────────────────────────────
+        btn_bar = QWidget()
+        btn_bar.setAutoFillBackground(True)
+        btn_bar.setStyleSheet("background:#d4d0c8;")
+
+        nav = QHBoxLayout(btn_bar)
+        nav.setContentsMargins(12, 4, 12, 8)
+        nav.setSpacing(4)
+
+        for text, slot in [
+            ("OK", self._on_ok),
+            ("Next", self._on_next),
+            ("Previous", self._on_pre),
+            ("Print", self._on_print),
+        ]:
+            btn = QPushButton(text)
+            btn.setStyleSheet(self._button_style())
+            btn.clicked.connect(slot)
+            nav.addWidget(btn)
+
+        nav.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(self._button_style())
+        cancel_btn.clicked.connect(self._on_cancel)
+        nav.addWidget(cancel_btn)
+
+        root.addWidget(btn_bar)
+
+    # =========================================================================
+    # Styles
+    # =========================================================================
+
+    def _button_style(self) -> str:
+        return (
             "QPushButton{"
             "background:#d4d0c8;"
             "color:black;"
@@ -147,371 +300,514 @@ class WorkingCurvePage(QWidget):
             "}"
         )
 
-        btn_reset = QPushButton("Reset to Defaults")
-        btn_reset.setStyleSheet(btn_style)
-        btn_reset.clicked.connect(self._on_reset)
-
-        ctrl_layout.addWidget(btn_reset)
-        ctrl_layout.addStretch()
-
-        info_lbl = QLabel("Coefficients are usually auto‑filled by Regression module.")
-        info_lbl.setStyleSheet(
-            "QLabel{"
-            "color:#666666;"
-            "font:9pt Arial;"
-            "border:none;"
-            "}"
-        )
-        ctrl_layout.addWidget(info_lbl)
-
-        ml.addLayout(ctrl_layout)
-
-        # ── Bottom Nav ──────────────────────────────────────────────────
-        btn_bar = QWidget()
-        btn_bar.setAutoFillBackground(True)
-        bbp = btn_bar.palette()
-        bbp.setColor(btn_bar.backgroundRole(), Qt.GlobalColor.lightGray)
-        btn_bar.setPalette(bbp)
-
-        bbl = QHBoxLayout(btn_bar)
-        bbl.setContentsMargins(12, 4, 12, 8)
-        bbl.setSpacing(4)
-
-        for txt, slot in [
-            ("1:OK", self._on_ok),
-            ("2:Next", self._on_next),
-            ("3:Pre.", self._on_pre),
-            ("4:Print", self._on_print),
-        ]:
-            b = QPushButton(txt)
-            b.setStyleSheet(btn_style)
-            b.clicked.connect(slot)
-            bbl.addWidget(b)
-
-        bbl.addStretch()
-
-        canc = QPushButton("9:Cancel")
-        canc.setStyleSheet(btn_style)
-        canc.clicked.connect(self._on_cancel)
-        bbl.addWidget(canc)
-
-        root.addWidget(btn_bar)
-
     # =========================================================================
-    # Table Creation
+    # Table Editing / Validation Helpers
     # =========================================================================
 
-    def _create_table(self) -> QTableWidget:
-        """Create a table with 8 columns: ELE, NAME, a, b, c, d, 100%, Skip."""
-        table = QTableWidget()
-        table.setColumnCount(8)
-        table.setHorizontalHeaderLabels(
-            ["ELE", "NAME", "a", "b", "c", "d", "100%", "Skip"]
-        )
+    def _on_item_changed(self, item: QTableWidgetItem):
+        if self._updating_table:
+            return
 
-        # Excel-style styling
-        table.setStyleSheet(
-            "QTableWidget{"
-            "background:white;"
-            "color:black;"
-            "border:1px solid #888888;"
-            "gridline-color:#888888;"
-            "font:9pt Arial;"
-            "}"
-            "QTableWidget::item{"
-            "border:1px solid #888888;"
-            "padding:0px 4px;"
-            "color:black;"
-            "}"
-            "QHeaderView::section{"
-            "background:#0078d7;"
-            "color:white;"
-            "font:bold 9pt Arial;"
-            "border:1px solid #888888;"
-            "padding:2px 4px;"
-            "}"
-            "QTableWidget::item:selected{"
-            "background:#cce5ff;"
-            "color:black;"
-            "}"
-            "QTableWidget::item:!selected{"
-            "color:black;"
-            "}"
-            "QTableWidget QLineEdit{"
-            "background:white;"
-            "color:black;"
-            "}"
-        )
+        col = item.column()
+        text = item.text().strip()
 
-        # Column widths
-        col_widths = [50, 70, 90, 90, 90, 90, 60, 70]
-        for i, w in enumerate(col_widths):
-            table.setColumnWidth(i, w)
+        # Normalize Y/N column.
+        if col == self.COL_YN:
+            value = text.upper()
 
-        table.verticalHeader().setVisible(False)
-        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-
-        # Row height
-        table.verticalHeader().setDefaultSectionSize(27)
-        table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        # Initially set 32 rows (will be hidden/used based on Page 3 data)
-        table.setRowCount(MAX_ELEMENTS)
-        self._populate_empty_rows(table)
-
-        # Calculate table height: rows × 27 + header (27) + small margin
-        table_height = (MAX_ELEMENTS * 27) + 27 + 3
-        table.setFixedHeight(table_height)
-
-        return table
-
-    def _populate_empty_rows(self, table):
-        """Fill rows with default widgets (empty or default values)."""
-        for row in range(MAX_ELEMENTS):
-            # ELE (read-only, gray)
-            ele_item = QTableWidgetItem("")
-            ele_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            ele_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            ele_item.setBackground(QColor("#e8e8e8"))
-            ele_item.setForeground(QColor("black"))
-            table.setItem(row, 0, ele_item)
-
-            # NAME (read-only, gray)
-            name_item = QTableWidgetItem("")
-            name_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            name_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            name_item.setBackground(QColor("#e8e8e8"))
-            name_item.setForeground(QColor("black"))
-            table.setItem(row, 1, name_item)
-
-            # a, b, c, d (editable, white) - use QLineEdit widgets for float input
-            for col in range(2, 6):
-                edit = QLineEdit("0.00000000")
-                edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                validator = QDoubleValidator(-1000.0, 1000.0, 8, edit)
-                validator.setNotation(QDoubleValidator.Notation.StandardNotation)
-                edit.setValidator(validator)
-                edit.setStyleSheet(
-                    "QLineEdit{"
-                    "background:white;"
-                    "color:black;"
-                    "border:1px solid #888888;"
-                    "font:9pt Arial;"
-                    "padding:0px 2px;"
-                    "}"
+            if value not in ["", "I", "Y", "N"]:
+                self._updating_table = True
+                item.setText("")
+                self._updating_table = False
+                self._show_msg(
+                    "Invalid Y/N",
+                    "Y/N must be blank, I, Y, or N.",
+                    QMessageBox.Icon.Warning
                 )
-                table.setCellWidget(row, col, edit)
+                return
 
-            # 100% Correction (dropdown Y/N)
-            norm_combo = QComboBox()
-            norm_combo.addItems(["Y", "N"])
-            norm_combo.setCurrentIndex(0)  # default Y
-            norm_combo.setStyleSheet(
-                "QComboBox{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-                "QComboBox::drop-down{"
-                "border:none;"
-                "width:12px;"
-                "}"
-                "QComboBox QAbstractItemView{"
-                "background:white;"
-                "color:black;"
-                "}"
-            )
-            table.setCellWidget(row, 6, norm_combo)
+            if value != text:
+                self._updating_table = True
+                item.setText(value)
+                self._updating_table = False
 
-            # Skip Point (editable, float)
-            skip_edit = QLineEdit("0.0000")
-            skip_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            skip_validator = QDoubleValidator(0.0, 100.0, 4, skip_edit)
-            skip_edit.setValidator(skip_validator)
-            skip_edit.setStyleSheet(
-                "QLineEdit{"
-                "background:white;"
-                "color:black;"
-                "border:1px solid #888888;"
-                "font:9pt Arial;"
-                "padding:0px 2px;"
-                "}"
-            )
-            table.setCellWidget(row, 7, skip_edit)
+        # Normalize SKIP column.
+        elif col == self.COL_SKIP:
+            value = text.upper()
 
-    def _populate_from_page3(self, data: list):
-        """Populate table using Page 3 data (list of dicts)."""
-        # Clear all rows first
-        for row in range(MAX_ELEMENTS):
-            # Reset ELE and NAME to empty
-            ele_item = self.table.item(row, 0)
-            if ele_item:
-                ele_item.setText("")
-            name_item = self.table.item(row, 1)
-            if name_item:
-                name_item.setText("")
-            # Reset coefficient fields to 0
-            for col in range(2, 6):
-                edit = self.table.cellWidget(row, col)
-                if edit:
-                    edit.setText("0.00000000")
-            # Reset 100% to Y
-            norm_combo = self.table.cellWidget(row, 6)
-            if norm_combo:
-                norm_combo.setCurrentIndex(0)  # Y
-            # Reset Skip to 0
-            skip_edit = self.table.cellWidget(row, 7)
-            if skip_edit:
-                skip_edit.setText("0.0000")
+            if value not in ["", "+"]:
+                self._updating_table = True
+                item.setText("")
+                self._updating_table = False
+                self._show_msg(
+                    "Invalid SKIP",
+                    "SKIP must be blank or '+'.",
+                    QMessageBox.Icon.Warning
+                )
+                return
 
-        # Load saved coefficients if any
-        saved_coeffs = {}
+            if value != text:
+                self._updating_table = True
+                item.setText(value)
+                self._updating_table = False
+
+    # =========================================================================
+    # Page 3 Rows
+    # =========================================================================
+
+    def _rows_from_page3(self) -> list:
+        """
+        Build Page 5 rows from Page 3 active analytical rows.
+
+        Internal Standard rows default to Y/N = I.
+        Normal rows default to Y/N = Y.
+        """
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_05_wc:
-                coeff_list = g.page_05_wc.get("coefficients", [])
-                for entry in coeff_list:
-                    key = (entry.get("element", ""), entry.get("name", ""))
-                    saved_coeffs[key] = entry
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if not group or not group.page_03_channel:
+                return []
+
+            page3_rows = group.page_03_channel
+            page4 = group.page_04_drift or {}
+
+            referenced_itgs = set()
+
+            for entry in page3_rows:
+                try:
+                    ise_ref = int(entry.get("ise_ref", 0))
+                except (TypeError, ValueError):
+                    ise_ref = 0
+
+                if ise_ref > 0:
+                    referenced_itgs.add(str(ise_ref))
+
+            page4_lookup = {}
+
+            if isinstance(page4, dict) and isinstance(page4.get("rows"), list):
+                for row in page4["rows"]:
+                    key = str(row.get("name", "")).strip().upper()
+
+                    if key:
+                        page4_lookup[key] = row
+
+            rows = []
+
+            for idx, entry in enumerate(page3_rows):
+                ele = str(entry.get("ele", "")).strip()
+                name = str(entry.get("name", "")).strip()
+                itg = str(entry.get("itg", "")).strip()
+
+                display_key = name or ele or (f"ITG{itg}" if itg else "")
+
+                if not display_key:
+                    continue
+
+                try:
+                    own_ise_ref = int(entry.get("ise_ref", 0))
+                except (TypeError, ValueError):
+                    own_ise_ref = 0
+
+                is_internal_standard = (
+                    itg in referenced_itgs and own_ise_ref == 0
+                )
+
+                page4_row = page4_lookup.get(display_key.upper())
+
+                if page4_row:
+                    h_sample = str(page4_row.get("h_sample", "")).strip()
+                    l_sample = str(page4_row.get("l_sample", "")).strip()
+                    k_sample = str(page4_row.get("k_sample", "")).strip()
+
+                    if h_sample == "*" and l_sample == "*" and k_sample == "*":
+                        is_internal_standard = True
+
+                yn_default = "I" if is_internal_standard else "Y"
+
+                rows.append({
+                    "ar_no": str(idx + 1),
+                    "element": display_key,
+                    "ele": ele or display_key,
+                    "name": name or display_key,
+
+                    # Neutral working curve:
+                    # C = I
+                    "a": "0.00000000",
+                    "b": "0.00000000",
+                    "c": "1.00000000",
+                    "d": "0.00000000",
+
+                    "yn": yn_default,
+                    "norm": yn_default,
+                    "skip": "",
+                    "point": "0.00000",
+                })
+
+            return rows
+
         finally:
             session.close()
 
-        # Fill rows with Page 3 data
-        for idx, entry in enumerate(data):
-            if idx >= MAX_ELEMENTS:
-                break
-            row = idx
-            ele = entry.get("ele", "")
-            name = entry.get("name", "")
+    # =========================================================================
+    # Table Population
+    # =========================================================================
 
-            # Set ELE and NAME
-            ele_item = self.table.item(row, 0)
-            if ele_item:
-                ele_item.setText(ele)
-            name_item = self.table.item(row, 1)
-            if name_item:
-                name_item.setText(name)
+    def _populate_table(self, rows: list):
+        self._updating_table = True
 
-            # Load saved coefficients if available
-            key = (ele, name)
-            if key in saved_coeffs:
-                coeff = saved_coeffs[key]
-                # a, b, c, d
-                for col, field in enumerate(["a", "b", "c", "d"], start=2):
-                    edit = self.table.cellWidget(row, col)
-                    if edit:
-                        val = coeff.get(field, 0.0)
-                        edit.setText(f"{val:.8f}")
-                # 100%
-                norm_combo = self.table.cellWidget(row, 6)
-                if norm_combo:
-                    norm = coeff.get("norm", "Y")
-                    idx_norm = 0 if norm == "Y" else 1
-                    norm_combo.setCurrentIndex(idx_norm)
-                # Skip
-                skip_edit = self.table.cellWidget(row, 7)
-                if skip_edit:
-                    skip = coeff.get("skip", 0.0)
-                    skip_edit.setText(f"{skip:.4f}")
+        self.table.setRowCount(len(rows))
 
-    def _collect(self) -> dict:
-        """Collect coefficients from table into a dict."""
-        coefficients = []
-        for row in range(MAX_ELEMENTS):
-            ele_item = self.table.item(row, 0)
-            name_item = self.table.item(row, 1)
-            if not ele_item or not name_item:
-                continue
-            ele = ele_item.text().strip()
-            name = name_item.text().strip()
-            if not ele:  # skip empty rows
-                continue
+        for row_idx, row_data in enumerate(rows):
+            self._set_text_cell(
+                row_idx,
+                self.COL_ELE,
+                str(row_data.get("ele", row_data.get("element", ""))),
+                editable=False
+            )
 
-            # Get coefficient values from cell widgets
-            a_edit = self.table.cellWidget(row, 2)
-            b_edit = self.table.cellWidget(row, 3)
-            c_edit = self.table.cellWidget(row, 4)
-            d_edit = self.table.cellWidget(row, 5)
-            norm_combo = self.table.cellWidget(row, 6)
-            skip_edit = self.table.cellWidget(row, 7)
+            self._set_text_cell(
+                row_idx,
+                self.COL_NAME,
+                str(row_data.get("name", row_data.get("element", ""))),
+                editable=False
+            )
 
-            def get_float(edit):
-                try:
-                    return float(edit.text().strip()) if edit else 0.0
-                except ValueError:
-                    return 0.0
+            self._set_text_cell(
+                row_idx,
+                self.COL_A,
+                self._normalize_float_text(row_data.get("a", ""), "0.00000000", 8)
+            )
+            self._set_text_cell(
+                row_idx,
+                self.COL_B,
+                self._normalize_float_text(row_data.get("b", ""), "0.00000000", 8)
+            )
+            self._set_text_cell(
+                row_idx,
+                self.COL_C,
+                self._normalize_float_text(row_data.get("c", ""), "1.00000000", 8)
+            )
+            self._set_text_cell(
+                row_idx,
+                self.COL_D,
+                self._normalize_float_text(row_data.get("d", ""), "0.00000000", 8)
+            )
 
-            coefficients.append({
-                "element": ele,
-                "name": name,
-                "a": get_float(a_edit),
-                "b": get_float(b_edit),
-                "c": get_float(c_edit),
-                "d": get_float(d_edit),
-                "norm": norm_combo.currentText() if norm_combo else "Y",
-                "skip": get_float(skip_edit),
-            })
+            yn = str(
+                row_data.get(
+                    "yn",
+                    row_data.get("norm", "Y")
+                )
+            ).strip().upper()
 
-        return {"coefficients": coefficients}
+            if yn not in ["", "I", "Y", "N"]:
+                yn = "Y"
+
+            self._set_text_cell(row_idx, self.COL_YN, yn)
+
+            skip = str(row_data.get("skip", "")).strip().upper()
+
+            if skip not in ["", "+"]:
+                skip = ""
+
+            self._set_text_cell(row_idx, self.COL_SKIP, skip)
+
+            self._set_text_cell(
+                row_idx,
+                self.COL_POINT,
+                self._normalize_float_text(row_data.get("point", ""), "0.00000", 5)
+            )
+
+        self.table.resizeRowsToContents()
+
+        self._updating_table = False
+
+    def _set_text_cell(self, row: int, col: int, text: str, editable: bool = True):
+        item = QTableWidgetItem(str(text))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        flags = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+
+        if editable:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        else:
+            item.setBackground(Qt.GlobalColor.lightGray)
+
+        item.setFlags(flags)
+        self.table.setItem(row, col, item)
 
     # =========================================================================
     # Data Operations
     # =========================================================================
 
     def _load(self):
-        """Load Page 3 data and saved coefficients."""
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g:
-                page3_data = g.page_03_channel
-                if isinstance(page3_data, list):
-                    self._populate_from_page3(page3_data)
-                else:
-                    # If no Page 3 data, keep empty rows
-                    pass
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if group and group.page_05_wc:
+                data = group.page_05_wc
+
+                if isinstance(data, dict) and isinstance(data.get("coefficients"), list):
+                    saved_rows = data["coefficients"]
+
+                    page3_rows = self._rows_from_page3()
+                    merged_rows = self._merge_page3_with_saved(page3_rows, saved_rows)
+
+                    self._populate_table(merged_rows)
+                    return
+
         finally:
             session.close()
 
+        self._populate_table(self._rows_from_page3())
+
+    def _merge_page3_with_saved(self, page3_rows: list, saved_rows: list) -> list:
+        saved_lookup = {}
+
+        for row in saved_rows:
+            element = str(row.get("element", "")).strip()
+            ele = str(row.get("ele", "")).strip()
+            name = str(row.get("name", "")).strip()
+
+            if element:
+                saved_lookup[element.upper()] = row
+
+            if name:
+                saved_lookup[name.upper()] = row
+
+            if ele:
+                saved_lookup[ele.upper()] = row
+
+        merged = []
+
+        for row in page3_rows:
+            element_key = str(row.get("element", "")).strip().upper()
+            ele_key = str(row.get("ele", "")).strip().upper()
+            name_key = str(row.get("name", "")).strip().upper()
+
+            saved = (
+                saved_lookup.get(element_key) or
+                saved_lookup.get(name_key) or
+                saved_lookup.get(ele_key)
+            )
+
+            if saved:
+                merged_row = dict(row)
+
+                for key in ["a", "b", "c", "d", "yn", "norm", "skip", "point"]:
+                    if key in saved:
+                        merged_row[key] = saved.get(key)
+
+                # Backward compatibility:
+                # old page stored only "skip" as numeric threshold.
+                # If "point" is missing and old skip looks numeric, move it to point.
+                if "point" not in saved:
+                    old_skip = saved.get("skip", "")
+
+                    try:
+                        float(str(old_skip).strip())
+                        merged_row["point"] = old_skip
+                        merged_row["skip"] = ""
+                    except (TypeError, ValueError):
+                        pass
+
+                merged.append(merged_row)
+            else:
+                merged.append(row)
+
+        return merged
+
+    def _collect(self) -> dict:
+        coefficients = []
+
+        for row in range(self.table.rowCount()):
+            ele = self._cell_text(row, self.COL_ELE)
+            name = self._cell_text(row, self.COL_NAME)
+
+            if not ele and not name:
+                continue
+
+            element_key = name or ele
+
+            yn = self._cell_text(row, self.COL_YN).upper()
+
+            if yn not in ["", "I", "Y", "N"]:
+                yn = "Y"
+
+            skip = self._cell_text(row, self.COL_SKIP).upper()
+
+            if skip not in ["", "+"]:
+                skip = ""
+
+            coefficients.append({
+                "element": element_key,
+                "ele": ele,
+                "name": name,
+                "a": self._to_float(self._cell_text(row, self.COL_A), 0.0),
+                "b": self._to_float(self._cell_text(row, self.COL_B), 0.0),
+                "c": self._to_float(self._cell_text(row, self.COL_C), 1.0),
+                "d": self._to_float(self._cell_text(row, self.COL_D), 0.0),
+
+                # Manual-style Page 5 fields:
+                "yn": yn,
+                "norm": yn,      # compatibility with older code
+                "skip": skip,    # blank or "+"
+                "point": self._to_float(self._cell_text(row, self.COL_POINT), 0.0),
+            })
+
+        return {
+            "coefficients": coefficients
+        }
+
     def _save(self):
-        """Save coefficients to database."""
-        data = self._collect()
+        new_data = self._collect()
+
         session = get_session()
+
         try:
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g:
-                g.page_05_wc = data
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if group:
+                old_data = group.page_05_wc or {}
+                old_coefficients = []
+
+                if isinstance(old_data, dict):
+                    old_coefficients = old_data.get("coefficients", [])
+
+                    if not isinstance(old_coefficients, list):
+                        old_coefficients = []
+
+                group.page_05_wc = {
+                    "coefficients": new_data.get("coefficients", []),
+                    "backup_coefficients": old_coefficients,
+                }
+
                 session.commit()
+
         finally:
             session.close()
 
     # =========================================================================
-    # Button Actions
+    # Helpers
+    # =========================================================================
+
+    def _cell_text(self, row: int, col: int) -> str:
+        item = self.table.item(row, col)
+
+        if not item:
+            return ""
+
+        return item.text().strip()
+
+    def _to_float(self, text, default: float = 0.0) -> float:
+        try:
+            value = str(text or "").strip()
+
+            if value == "":
+                return default
+
+            return float(value)
+
+        except (TypeError, ValueError):
+            return default
+
+    def _normalize_float_text(self, value, default: str, decimals: int) -> str:
+        raw = str(value or "").strip()
+
+        if raw == "":
+            raw = default
+
+        try:
+            return f"{float(raw):.{decimals}f}"
+
+        except (TypeError, ValueError):
+            return default
+
+    # =========================================================================
+    # Buttons
     # =========================================================================
 
     def _on_reset(self):
-        """Reset all coefficients to default (0 for a,b,c,d; Y for 100%; 0 for skip)."""
         if QMessageBox.question(
             self,
             "Reset",
-            "Reset all coefficients to default values?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) == QMessageBox.StandardButton.Yes:
-            for row in range(MAX_ELEMENTS):
-                for col in range(2, 6):
-                    edit = self.table.cellWidget(row, col)
-                    if edit:
-                        edit.setText("0.00000000")
-                norm_combo = self.table.cellWidget(row, 6)
-                if norm_combo:
-                    norm_combo.setCurrentIndex(0)  # Y
-                skip_edit = self.table.cellWidget(row, 7)
-                if skip_edit:
-                    skip_edit.setText("0.0000")
+            "Reset all working curve coefficients to neutral default values?\n\n"
+            "a = 0.00000000\n"
+            "b = 0.00000000\n"
+            "c = 1.00000000\n"
+            "d = 0.00000000\n\n"
+            "Y/N, SKIP, and POINT will also reset to default values.\n\n"
+            "This only changes the table. Click OK to save.",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
+            return
+
+        page3_defaults = self._rows_from_page3()
+        self._populate_table(page3_defaults)
+
+    def _on_restore_previous(self):
+        session = get_session()
+
+        try:
+            group = session.get(AnalyticalGroup, self.group_id)
+
+            if not group or not group.page_05_wc:
+                self._show_msg(
+                    "No Backup",
+                    "No previous working curve coefficients are available.",
+                    QMessageBox.Icon.Warning
+                )
+                return
+
+            data = group.page_05_wc
+
+            if not isinstance(data, dict):
+                self._show_msg(
+                    "No Backup",
+                    "No previous working curve coefficients are available.",
+                    QMessageBox.Icon.Warning
+                )
+                return
+
+            backup = data.get("backup_coefficients", [])
+
+            if not isinstance(backup, list) or not backup:
+                self._show_msg(
+                    "No Backup",
+                    "No previous working curve coefficients are available.",
+                    QMessageBox.Icon.Warning
+                )
+                return
+
+        finally:
+            session.close()
+
+        reply = QMessageBox.question(
+            self,
+            "Restore Previous",
+            "Restore the previous working curve coefficients?\n\n"
+            "The table will be restored first. Click OK to save.",
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        page3_rows = self._rows_from_page3()
+        merged_rows = self._merge_page3_with_saved(page3_rows, backup)
+        self._populate_table(merged_rows)
+
+        self._show_msg(
+            "Restored",
+            "Previous working curve coefficients restored in the table.\n\n"
+            "Click OK to save them."
+        )
 
     def _on_ok(self):
         self._save()
@@ -519,21 +815,35 @@ class WorkingCurvePage(QWidget):
 
     def _on_next(self):
         self._save()
+
         try:
             from ui.anainf.page_06_matrix import CorrectionPage
+
             self.main_window.set_right_widget(
-                CorrectionPage(self.main_window, self.group_id, self.group_name)
+                CorrectionPage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
-            self._show_msg("Next Page", "Page 6 (Correction) is not built yet.")
+            self._show_msg("Next Page", "Page 6 is not built yet.")
 
     def _on_pre(self):
         self._save()
+
         try:
             from ui.anainf.page_04_drift import DriftCorrectionPage
+
             self.main_window.set_right_widget(
-                DriftCorrectionPage(self.main_window, self.group_id, self.group_name)
+                DriftCorrectionPage(
+                    self.main_window,
+                    self.group_id,
+                    self.group_name
+                )
             )
+
         except ImportError:
             pass
 
@@ -575,7 +885,10 @@ class WorkingCurvePage(QWidget):
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setWindowTitle(title)
         msg.setText(text)
-        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setStandardButtons(
+            QMessageBox.StandardButton.Yes |
+            QMessageBox.StandardButton.No
+        )
         msg.setStyleSheet(
             "QLabel{color:black;font:9pt Arial;}"
             "QPushButton{"

@@ -88,7 +88,7 @@ class JobSelectionPage(QWidget):
             ("Master Curve Recalibration", None),
             ("INT.1 Raw Intensity", self._open_job5),
             ("INT.2 Drift Corrected", self._open_job6),
-            ("INT.2 for Working Curve", None),
+            ("INT.2 for Working Curve", self._open_job7),
             ("INT.2 for Target", self._open_job8),
             ("Content Analysis", None),
             ("Special 3-Time Analysis", None),
@@ -271,6 +271,24 @@ class JobSelectionPage(QWidget):
                 gid,
                 gname,
                 "8"
+            )
+        )
+    
+    def _open_job7(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.analysis.analysis_run_job7 import Job7RunPage
+
+        self.main_window.set_right_widget(
+            Job7RunPage(
+                self.main_window,
+                gid,
+                gname,
+                "7"
             )
         )
 

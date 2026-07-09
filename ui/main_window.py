@@ -4,7 +4,7 @@ SpectraSoft — Main Window
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QStatusBar, QFrame
+    QLabel, QStatusBar, QFrame, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
@@ -58,38 +58,61 @@ class MainWindow(QMainWindow):
             "}"
         )
 
-        # Analytical Group
+        # ── Analytical Group ─────────────────────────────────────────────
         group_m = mb.addMenu("Analytical Group")
         self.action_group = QAction("Analytical Group", self)
         self.action_group.setCheckable(True)
         self.action_group.triggered.connect(self._show_home_content)
         group_m.addAction(self.action_group)
 
-        # Master Elements
+        # ── Master Elements ──────────────────────────────────────────────
         master_m = mb.addMenu("Master Elements")
         self.action_master = QAction("Master Elements", self)
         self.action_master.setCheckable(True)
         self.action_master.triggered.connect(self._open_master_elements)
         master_m.addAction(self.action_master)
 
-        # Source Codes
+        # ── Source Codes ─────────────────────────────────────────────────
         source_m = mb.addMenu("Source Codes")
         self.action_source = QAction("Source Codes", self)
         self.action_source.setCheckable(True)
         self.action_source.triggered.connect(self._open_source_codes)
         source_m.addAction(self.action_source)
 
-        # Analysis Menu
+        # ── Analysis Menu ────────────────────────────────────────────────
         analysis_m = mb.addMenu("Analysis")
 
-        # Option 1: Job Selection / Real Analysis
         self.action_analysis = QAction("Analysis Jobs", self)
         self.action_analysis.setCheckable(True)
         self.action_analysis.triggered.connect(self._open_job_selection)
         analysis_m.addAction(self.action_analysis)
 
-        analysis_m.addSeparator()
-        
+        # ── Regression Menu ──────────────────────────────────────────────
+        regression_m = mb.addMenu("Regression")
+
+        self.action_chemical_standards = QAction("Chemical Standards", self)
+        self.action_chemical_standards.setCheckable(True)
+        self.action_chemical_standards.triggered.connect(
+            self._open_chemical_standards
+        )
+        regression_m.addAction(self.action_chemical_standards)
+
+        self.action_regression_calc = QAction("Regression Calculation", self)
+        self.action_regression_calc.setCheckable(True)
+        self.action_regression_calc.triggered.connect(
+            self._open_regression_calculation
+        )
+        regression_m.addAction(self.action_regression_calc)
+
+        regression_m.addSeparator()
+
+        self.action_working_curve_page = QAction("Working Curve Coefficients", self)
+        self.action_working_curve_page.setCheckable(True)
+        self.action_working_curve_page.triggered.connect(
+            self._open_working_curve_page
+        )
+        regression_m.addAction(self.action_working_curve_page)
+
         # Default: Analytical Group checked
         self.action_group.setChecked(True)
         self._current_action = self.action_group
@@ -97,6 +120,7 @@ class MainWindow(QMainWindow):
     def _set_active_menu(self, action):
         if self._current_action:
             self._current_action.setChecked(False)
+
         action.setChecked(True)
         self._current_action = action
 
@@ -138,7 +162,6 @@ class MainWindow(QMainWindow):
     # =========================================================================
 
     def set_right_widget(self, widget):
-        # Clear existing right-side widget
         while self._right_layout.count():
             item = self._right_layout.takeAt(0)
             if item.widget():
@@ -146,7 +169,6 @@ class MainWindow(QMainWindow):
 
         self._right_layout.addWidget(widget)
 
-        # Fullscreen mode if widget wants it
         if hasattr(widget, "wants_fullscreen") and callable(widget.wants_fullscreen):
             self.set_fullscreen_mode(widget.wants_fullscreen())
         else:
@@ -173,8 +195,10 @@ class MainWindow(QMainWindow):
         v.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         hint = QLabel(
-            "Select a group and double-click to open\n"
-            "or use Analysis → Analysis Jobs (real) / Simulation (test)"
+            "Select an Analytical Group from the left panel.\n\n"
+            "Use Analysis → Analysis Jobs for hardware jobs.\n"
+            "Use Regression → Chemical Standards / Regression Calculation "
+            "for working curve setup."
         )
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet(
@@ -219,15 +243,143 @@ class MainWindow(QMainWindow):
         self._set_active_menu(self.action_master)
         self.set_right_widget(MasterElementsPage(self))
 
+    def _open_job_selection(self):
+        """
+        Open hardware analysis job selection page.
+
+        This still requires an Analytical Group because all jobs depend on AG data.
+        """
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        self._set_active_menu(self.action_analysis)
+
+        from ui.analysis.job_selection import JobSelectionPage
+        self.set_right_widget(JobSelectionPage(self))
+
+    # =========================================================================
+    # Regression Menu Actions
+    # =========================================================================
+
+    def _open_chemical_standards(self):
+        """
+        Open chemical standards input page.
+
+        This page stores certified/lab chemical values for standards.
+        Data is saved into:
+            AnalyticalGroup.page_05_chemical_standards
+        """
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        self._set_active_menu(self.action_chemical_standards)
+
+        try:
+            from ui.regression.chemical_standards_page import ChemicalStandardsPage
+
+            self.set_right_widget(
+                ChemicalStandardsPage(
+                    self,
+                    gid,
+                    gname
+                )
+            )
+
+        except ImportError:
+            QMessageBox.information(
+                self,
+                "Regression",
+                "Chemical Standards page is not built yet."
+            )
+
+    def _open_regression_calculation(self):
+        """
+        Open regression calculation page.
+
+        This page calculates a,b,c,d using:
+            page_05_wc_measurements
+            page_05_chemical_standards
+
+        Then it files coefficients into:
+            page_05_wc
+        """
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        self._set_active_menu(self.action_regression_calc)
+
+        try:
+            from ui.regression.regression_calculation_page import RegressionCalculationPage
+
+            self.set_right_widget(
+                RegressionCalculationPage(
+                    self,
+                    gid,
+                    gname
+                )
+            )
+
+        except ImportError:
+            QMessageBox.information(
+                self,
+                "Regression",
+                "Regression Calculation page is not built yet."
+            )
+
+    def _open_working_curve_page(self):
+        """
+        Open Page 5 working curve coefficients directly from Regression menu.
+        """
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        self._set_active_menu(self.action_working_curve_page)
+
+        try:
+            from ui.anainf.page_05_working_curve import WorkingCurvePage
+
+            self.set_right_widget(
+                WorkingCurvePage(
+                    self,
+                    gid,
+                    gname
+                )
+            )
+
+        except ImportError:
+            QMessageBox.information(
+                self,
+                "Regression",
+                "Working Curve page is not built yet."
+            )
+
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+
     def _get_current_group(self):
         if hasattr(self._group_panel, "_selected"):
             gid, gname = self._group_panel._selected()
             if gid is not None:
                 return gid, gname
+
         return None, None
 
-    def _open_job_selection(self):
-        """Open the real analysis job selection page."""
-        self._set_active_menu(self.action_analysis)
-        from ui.analysis.job_selection import JobSelectionPage
-        self.set_right_widget(JobSelectionPage(self))
+    def _warn_no_group(self):
+        QMessageBox.warning(
+            self,
+            "No Analytical Group Selected",
+            "Please select an Analytical Group from the left panel first."
+        )
