@@ -1,7 +1,7 @@
 """
 SpectraSoft — Regression Calculation Page
 
-This page calculates working curve coefficients a, b, c, d.
+This page calculates Page 5 working curve coefficients a, b, c, d.
 
 Inputs:
 1. Job 7 measured drift-corrected intensities:
@@ -13,27 +13,26 @@ Inputs:
 Output:
     AnalyticalGroup.page_05_wc["coefficients"]
 
-Polynomial:
+Working curve formula:
     C = a*I^3 + b*I^2 + c*I + d
 
 Degree mapping:
     Degree 1:
+        C = c*I + d
         a = 0
         b = 0
-        c = slope
-        d = intercept
 
     Degree 2:
+        C = b*I^2 + c*I + d
         a = 0
-        b = quadratic
-        c = linear
-        d = intercept
 
     Degree 3:
-        a = cubic
-        b = quadratic
-        c = linear
-        d = intercept
+        C = a*I^3 + b*I^2 + c*I + d
+
+Important:
+- This page does not run hardware.
+- This page uses measured IDC values already stored by Job 7.
+- This page preserves Page 5 Y/N, SKIP, and POINT fields while filing a,b,c,d.
 """
 
 from PyQt6.QtWidgets import (
@@ -127,7 +126,7 @@ class RegressionCalculationPage(QWidget):
         # ── Info ─────────────────────────────────────────────────────────
         info = QLabel(
             "Regression pairs Job 7 drift-corrected intensities with certified "
-            "chemical values, then calculates a, b, c, d coefficients for Page 5."
+            "chemical values, then calculates Page 5 coefficients a, b, c, and d."
         )
         info.setWordWrap(True)
         info.setFixedHeight(38)
@@ -153,7 +152,9 @@ class RegressionCalculationPage(QWidget):
         self.element_combo = QComboBox()
         self.element_combo.setFixedWidth(180)
         self.element_combo.setStyleSheet(self._combo_style())
-        self.element_combo.currentIndexChanged.connect(self._refresh_current_element_table)
+        self.element_combo.currentIndexChanged.connect(
+            self._refresh_current_element_table
+        )
         controls.addWidget(self.element_combo)
 
         lbl_degree = QLabel("Degree:")
@@ -165,7 +166,9 @@ class RegressionCalculationPage(QWidget):
         self.degree_combo.addItems(["1", "2", "3"])
         self.degree_combo.setCurrentText("1")
         self.degree_combo.setStyleSheet(self._combo_style())
-        self.degree_combo.currentIndexChanged.connect(self._refresh_current_element_table)
+        self.degree_combo.currentIndexChanged.connect(
+            self._refresh_current_element_table
+        )
         controls.addWidget(self.degree_combo)
 
         controls.addStretch()
@@ -232,9 +235,7 @@ class RegressionCalculationPage(QWidget):
         outer_layout.addWidget(self.table, stretch=1)
 
         # ── Coefficient Result Label ─────────────────────────────────────
-        self.coeff_label = QLabel(
-            "a = —     b = —     c = —     d = —"
-        )
+        self.coeff_label = QLabel("a = —     b = —     c = —     d = —")
         self.coeff_label.setFixedHeight(34)
         self.coeff_label.setStyleSheet(
             "QLabel{"
@@ -288,13 +289,11 @@ class RegressionCalculationPage(QWidget):
         nav.setContentsMargins(12, 4, 12, 8)
         nav.setSpacing(4)
 
-        buttons = [
+        for text, slot in [
             ("Chemical Standards", self._on_chemical_standards),
             ("Page 5", self._on_page5),
             ("Print", self._on_print),
-        ]
-
-        for text, slot in buttons:
+        ]:
             btn = QPushButton(text)
             btn.setStyleSheet(self._button_style())
             btn.clicked.connect(slot)
@@ -350,6 +349,12 @@ class RegressionCalculationPage(QWidget):
     # =========================================================================
 
     def _load_elements(self):
+        """
+        Load active element/display names from Page 3.
+
+        Uses same display key as analysis pages:
+            NAME if present, else ELE, else ITG fallback.
+        """
         self.element_names = []
 
         session = get_session()
@@ -378,6 +383,11 @@ class RegressionCalculationPage(QWidget):
             self.element_combo.addItem(elem, elem)
 
     def _load_measurements_and_standards(self):
+        """
+        Load:
+        - Job 7 IDC measurements
+        - Certified chemical standards
+        """
         session = get_session()
 
         try:
@@ -394,11 +404,13 @@ class RegressionCalculationPage(QWidget):
 
             if isinstance(meas_data, dict):
                 measurements = meas_data.get("measurements", [])
+
                 if not isinstance(measurements, list):
                     measurements = []
 
             if isinstance(chem_data, dict):
                 standards = chem_data.get("standards", [])
+
                 if not isinstance(standards, list):
                     standards = []
 
@@ -430,7 +442,6 @@ class RegressionCalculationPage(QWidget):
             return
 
         pairs = self._build_pairs_for_element(elem)
-
         self.table.setRowCount(len(pairs))
 
         for row_idx, pair in enumerate(pairs):
@@ -439,11 +450,17 @@ class RegressionCalculationPage(QWidget):
             self.table.setItem(row_idx, self.COL_SAMPLE, sample_item)
 
             intensity_item = QTableWidgetItem(f"{pair['intensity']:.5f}")
-            intensity_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            intensity_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight |
+                Qt.AlignmentFlag.AlignVCenter
+            )
             self.table.setItem(row_idx, self.COL_INTENSITY, intensity_item)
 
             chemical_item = QTableWidgetItem(f"{pair['chemical']:.5f}")
-            chemical_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            chemical_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight |
+                Qt.AlignmentFlag.AlignVCenter
+            )
             self.table.setItem(row_idx, self.COL_CHEMICAL, chemical_item)
 
         self.table.resizeRowsToContents()
@@ -456,12 +473,19 @@ class RegressionCalculationPage(QWidget):
         )
 
         if elem in self.calculated_coeffs:
-            coeff = self.calculated_coeffs[elem]
-            self._show_coefficients(coeff)
+            self._show_coefficients(self.calculated_coeffs[elem])
         else:
             self.coeff_label.setText("a = —     b = —     c = —     d = —")
 
     def _build_pairs_for_element(self, elem: str) -> list:
+        """
+        Pair:
+            IDC intensity from Job 7
+        with:
+            Certified chemical value from Chemical Standards page
+
+        Matching is by sample name.
+        """
         measurements, standards = self._load_measurements_and_standards()
 
         intensity_by_sample = {}
@@ -533,8 +557,8 @@ class RegressionCalculationPage(QWidget):
 
         if len(pairs) < degree + 1:
             raise ValueError(
-                f"Element {elem}: degree {degree} requires at least {degree + 1} points. "
-                f"Only {len(pairs)} valid point(s) found."
+                f"Element {elem}: degree {degree} requires at least "
+                f"{degree + 1} valid point(s). Found {len(pairs)}."
             )
 
         x = [p["intensity"] for p in pairs]
@@ -554,13 +578,8 @@ class RegressionCalculationPage(QWidget):
         Fallback:
             normal equations solved by Gaussian elimination.
 
-        Returns:
-            {
-                "a": ...,
-                "b": ...,
-                "c": ...,
-                "d": ...
-            }
+        Returns Page 5 coefficients:
+            a, b, c, d
         """
         try:
             import numpy as np
@@ -568,21 +587,21 @@ class RegressionCalculationPage(QWidget):
             raw = np.polyfit(x_values, y_values, degree)
 
             if degree == 1:
-                # raw = [c, d]
+                # y = c*x + d
                 a = 0.0
                 b = 0.0
                 c = float(raw[0])
                 d = float(raw[1])
 
             elif degree == 2:
-                # raw = [b, c, d]
+                # y = b*x^2 + c*x + d
                 a = 0.0
                 b = float(raw[0])
                 c = float(raw[1])
                 d = float(raw[2])
 
             else:
-                # raw = [a, b, c, d]
+                # y = a*x^3 + b*x^2 + c*x + d
                 a = float(raw[0])
                 b = float(raw[1])
                 c = float(raw[2])
@@ -605,7 +624,7 @@ class RegressionCalculationPage(QWidget):
         Fits:
             y = q0 + q1*x + q2*x^2 + q3*x^3
 
-        Then maps:
+        Maps:
             d = q0
             c = q1
             b = q2
@@ -647,7 +666,6 @@ class RegressionCalculationPage(QWidget):
         Solve Ax=b by Gaussian elimination with partial pivoting.
         """
         n = len(vector)
-
         a = [row[:] + [vector[i]] for i, row in enumerate(matrix)]
 
         for i in range(n):
@@ -658,7 +676,10 @@ class RegressionCalculationPage(QWidget):
                     pivot = r
 
             if abs(a[pivot][i]) < 1e-12:
-                raise ValueError("Regression matrix is singular. Check standards.")
+                raise ValueError(
+                    "Regression matrix is singular. "
+                    "Check standard points or lower the degree."
+                )
 
             if pivot != i:
                 a[i], a[pivot] = a[pivot], a[i]
@@ -688,13 +709,21 @@ class RegressionCalculationPage(QWidget):
         degree = self._current_degree()
 
         if not elem:
-            self._show_msg("No Element", "Please select an element.", QMessageBox.Icon.Warning)
+            self._show_msg(
+                "No Element",
+                "Please select an element.",
+                QMessageBox.Icon.Warning
+            )
             return
 
         try:
             coeff, pairs = self._fit_element(elem, degree)
         except Exception as e:
-            self._show_msg("Regression Failed", str(e), QMessageBox.Icon.Warning)
+            self._show_msg(
+                "Regression Failed",
+                str(e),
+                QMessageBox.Icon.Warning
+            )
             return
 
         self.calculated_coeffs[elem] = {
@@ -709,7 +738,11 @@ class RegressionCalculationPage(QWidget):
         elem = self._current_element()
 
         if not elem:
-            self._show_msg("No Element", "Please select an element.", QMessageBox.Icon.Warning)
+            self._show_msg(
+                "No Element",
+                "Please select an element.",
+                QMessageBox.Icon.Warning
+            )
             return
 
         if elem not in self.calculated_coeffs:
@@ -718,7 +751,9 @@ class RegressionCalculationPage(QWidget):
             if elem not in self.calculated_coeffs:
                 return
 
-        self._file_coefficients_to_page5({elem: self.calculated_coeffs[elem]})
+        self._file_coefficients_to_page5({
+            elem: self.calculated_coeffs[elem]
+        })
 
         self._show_msg(
             "Filed",
@@ -795,9 +830,11 @@ class RegressionCalculationPage(QWidget):
         """
         File regression coefficients into AnalyticalGroup.page_05_wc.
 
-        Preserves:
-        - existing norm values
-        - existing skip values
+        Preserves existing:
+        - Y/N
+        - norm
+        - SKIP
+        - POINT
 
         Also backs up previous coefficients as backup_coefficients.
         """
@@ -812,8 +849,10 @@ class RegressionCalculationPage(QWidget):
             old_data = group.page_05_wc or {}
 
             old_coefficients = []
+
             if isinstance(old_data, dict):
                 old_coefficients = old_data.get("coefficients", [])
+
                 if not isinstance(old_coefficients, list):
                     old_coefficients = []
 
@@ -864,6 +903,23 @@ class RegressionCalculationPage(QWidget):
                 c = self._to_float(old.get("c", 1.0), 1.0)
                 d = self._to_float(old.get("d", 0.0), 0.0)
 
+            yn = str(
+                old.get(
+                    "yn",
+                    old.get("norm", "Y")
+                )
+            ).strip().upper()
+
+            if yn not in ["", "I", "Y", "N"]:
+                yn = "Y"
+
+            skip = str(old.get("skip", "")).strip().upper()
+
+            if skip not in ["", "+"]:
+                skip = ""
+
+            point = self._to_float(old.get("point", 0.0), 0.0)
+
             rows.append({
                 "element": elem,
                 "ele": str(old.get("ele", elem)).strip() or elem,
@@ -872,8 +928,12 @@ class RegressionCalculationPage(QWidget):
                 "b": b,
                 "c": c,
                 "d": d,
-                "norm": str(old.get("norm", "Y")).strip().upper() or "Y",
-                "skip": self._to_float(old.get("skip", 0.0), 0.0),
+
+                # Updated Page 5 manual-style fields.
+                "yn": yn,
+                "norm": yn,
+                "skip": skip,
+                "point": point,
             })
 
         return rows
@@ -920,7 +980,11 @@ class RegressionCalculationPage(QWidget):
         elem = self._current_element()
 
         if not elem:
-            self._show_msg("No Element", "Please select an element.", QMessageBox.Icon.Warning)
+            self._show_msg(
+                "No Element",
+                "Please select an element.",
+                QMessageBox.Icon.Warning
+            )
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -958,7 +1022,11 @@ class RegressionCalculationPage(QWidget):
             self._show_msg("Exported", f"Regression data exported to:\n{path}")
 
         except Exception as e:
-            self._show_msg("Export Failed", str(e), QMessageBox.Icon.Critical)
+            self._show_msg(
+                "Export Failed",
+                str(e),
+                QMessageBox.Icon.Critical
+            )
 
     def _on_print(self):
         self._show_msg("Print", "Print coming soon.")
