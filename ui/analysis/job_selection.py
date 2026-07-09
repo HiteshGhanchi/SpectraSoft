@@ -90,8 +90,8 @@ class JobSelectionPage(QWidget):
             ("INT.2 Drift Corrected", self._open_job6),
             ("INT.2 for Working Curve", self._open_job7),
             ("INT.2 for Target", self._open_job8),
-            ("Content Analysis", None),
-            ("Special 3-Time Analysis", None),
+            ("Content Analysis", self._open_jobx),
+            ("Special 3-Time Analysis", self._open_joby),
         ]
 
         grid = QGridLayout()
@@ -273,6 +273,24 @@ class JobSelectionPage(QWidget):
                 "6"
             )
         )
+    
+    def _open_job7(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.analysis.analysis_run_job7 import Job7RunPage
+
+        self.main_window.set_right_widget(
+            Job7RunPage(
+                self.main_window,
+                gid,
+                gname,
+                "7"
+            )
+        )
 
     def _open_job8(self):
         gid, gname = self._get_current_group()
@@ -291,22 +309,40 @@ class JobSelectionPage(QWidget):
                 "8"
             )
         )
-    
-    def _open_job7(self):
+
+    def _open_jobx(self):
         gid, gname = self._get_current_group()
 
         if gid is None:
             self._warn_no_group()
             return
 
-        from ui.analysis.analysis_run_job7 import Job7RunPage
+        from ui.analysis.analysis_run_jobx import JobXRunPage
 
         self.main_window.set_right_widget(
-            Job7RunPage(
+            JobXRunPage(
                 self.main_window,
                 gid,
                 gname,
-                "7"
+                "X"
+            )
+        )
+
+    def _open_joby(self):
+        gid, gname = self._get_current_group()
+
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.analysis.analysis_run_joby import JobYRunPage
+
+        self.main_window.set_right_widget(
+            JobYRunPage(
+                self.main_window,
+                gid,
+                gname,
+                "Y"
             )
         )
 
