@@ -27,13 +27,13 @@ Saved JSON example:
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QFrame, QTableWidget,
-    QTableWidgetItem, QHeaderView, QAbstractItemView,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QPushButton, QFrame, QTableWidget,
+    QTableWidgetItem, QAbstractItemView,
     QMessageBox, QScrollArea
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QIntValidator
+from PyQt6.QtGui import QColor
 
 from core.database import get_session
 from core.models import AnalyticalGroup, MasterElement
@@ -117,45 +117,16 @@ class AttenuatorPage(QWidget):
         )
         ml.addWidget(title)
 
-        # ── Get Elements ──────────────────────────────────────────────────
-        session = get_session()
-        try:
-            # Order by itg_no (primary key)
-            elements = session.query(MasterElement).order_by(MasterElement.itg_no).all()
-            element_count = len(elements)
-        finally:
-            session.close()
-
-        # If no elements exist, show empty tables
-        if element_count == 0:
-            elements = []
-
-        # Split into two halves
-        half = (element_count + 1) // 2
-        left_elements = elements[:half]
-        right_elements = elements[half:]
-
-        # Pad to ensure both tables have same number of rows
-        max_rows = max(len(left_elements), len(right_elements))
-        if max_rows == 0:
-            max_rows = 1  # At least one empty row to show the table
-        if len(left_elements) < max_rows:
-            left_elements = left_elements + [None] * (max_rows - len(left_elements))
-        if len(right_elements) < max_rows:
-            right_elements = right_elements + [None] * (max_rows - len(right_elements))
-
         # ── Tables Container ─────────────────────────────────────────────
         tables_container = QHBoxLayout()
         tables_container.setSpacing(20)
         tables_container.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Create left table with correct height
-        self._left_table = self._create_table(max_rows)
-        self._populate_table(self._left_table, left_elements)
-
-        # Create right table with same height
-        self._right_table = self._create_table(max_rows)
-        self._populate_table(self._right_table, right_elements)
+        
+        # Tables are created empty first.
+        # Actual element loading happens in self._load()
+        self._left_table = self._create_table(1)
+        self._right_table = self._create_table(1)
 
         tables_container.addWidget(self._left_table)
         tables_container.addWidget(self._right_table)
@@ -379,6 +350,7 @@ class AttenuatorPage(QWidget):
     def _collect(self) -> dict:
         """Collect data from both tables into a single dict."""
         rows = []
+
         for table in [self._left_table, self._right_table]:
             for row in range(table.rowCount()):
                 ele_item = table.item(row, 0)
@@ -390,21 +362,21 @@ class AttenuatorPage(QWidget):
                     ele = ele_item.text().strip()
                     itg_str = itg_item.text().strip()
                     wl = wl_item.text().strip()
-                    if ele and itg_str:  # only save non-empty
-                        try:
-                            itg_no = int(itg_str)
-                        except ValueError:
-                            continue
-                        try:
-                            att_val = int(att_item.text()) if att_item.text() else 0
-                        except ValueError:
-                            att_val = 0
-                        rows.append({
-                            "itg_no": itg_no,
-                            "element": ele,
-                            "wavelength": wl,
-                            "att_value": att_val,
-                        })
+                    att_text = att_item.text().strip()
+
+                    # Skip blank padding rows
+                    if not ele or not itg_str:
+                        continue
+
+                    itg_no = int(itg_str)
+                    att_val = int(att_text)
+
+                    rows.append({
+                        "itg_no": itg_no,
+                        "element": ele,
+                        "wavelength": wl,
+                        "att_value": att_val,
+                    })
 
         return {"rows": rows}
 
@@ -574,24 +546,84 @@ class AttenuatorPage(QWidget):
             "}"
         )
         return msg.exec()
+    
+    def _validate_att_values(self) -> bool:
+        """Validate that all ATT values are integers between 0 and 63."""
+        for table in [self._left_table, self._right_table]:
+            for row in range(table.rowCount()):
+                ele_item = table.item(row, 0)
+                itg_item = table.item(row, 1)
+                att_item = table.item(row, 3)
+
+                if not ele_item or not itg_item or not att_item:
+                    continue
+
+                ele = ele_item.text().strip()
+                itg = itg_item.text().strip()
+                att_text = att_item.text().strip()
+
+                # Skip blank padding rows
+                if not ele or not itg:
+                    continue
+
+                if att_text == "":
+                    self._show_msg(
+                        "Invalid ATT",
+                        f"ATT value is empty for element '{ele}'.",
+                        QMessageBox.Icon.Warning
+                    )
+                    return False
+
+                try:
+                    att_value = int(att_text)
+                except ValueError:
+                    self._show_msg(
+                        "Invalid ATT",
+                        f"ATT value for element '{ele}' must be a number between 0 and 63.",
+                        QMessageBox.Icon.Warning
+                    )
+                    return False
+
+                if att_value < 0 or att_value > 63:
+                    self._show_msg(
+                        "Invalid ATT",
+                        f"ATT value for element '{ele}' must be between 0 and 63.",
+                        QMessageBox.Icon.Warning
+                    )
+                    return False
+
+        return True
 
     # =========================================================================
     # Buttons
     # =========================================================================
 
     def _on_ok(self):
+        if not self._validate_att_values():
+            return
+
         self._save()
         self._show_msg("Saved", "Attenuator settings saved successfully.")
 
+
     def _on_next(self):
+        if not self._validate_att_values():
+            return
+
         self._save()
+
         from ui.anainf.page_03_channel import ChannelPage
         self.main_window.set_right_widget(
             ChannelPage(self.main_window, self.group_id, self.group_name)
         )
 
+
     def _on_pre(self):
+        if not self._validate_att_values():
+            return
+
         self._save()
+
         from ui.anainf.page_01_source import SourceConditionPage
         self.main_window.set_right_widget(
             SourceConditionPage(self.main_window, self.group_id, self.group_name)
@@ -602,7 +634,7 @@ class AttenuatorPage(QWidget):
 
     def _on_cancel(self):
         if self._show_question("Cancel", "Discard changes?") == QMessageBox.StandardButton.Yes:
-            from ui.anainf.page_01_source import AnalyticalConditionPage
+            from ui.anainf.page_01_source import SourceConditionPage
             self.main_window.set_right_widget(
-                AnalyticalConditionPage(self.main_window, self.group_id, self.group_name)
+                SourceConditionPage(self.main_window, self.group_id, self.group_name)
             )

@@ -17,14 +17,13 @@ Rules:
 - Clean applies only to Clean column (SEQ1-3 are read-only)
 - Preburn and Integ are editable for SEQ1, SEQ2, SEQ3
 - Source is editable for SEQ1, SEQ2, SEQ3, and Clean
-- All values are stored in the page_01_condition JSON field
+- All values are stored in the page_01_source JSON field
 
 Source Types (from Source Codes table):
   - 1: Normal Spark (standard for most elements)
   - 3: Combined Spark (for trace elements like P, S)
   - 4: Oscillation Spark (for gray cast iron)
   - 5: High Power Spark (for carbon in steel)
-  - HVS: High Voltage Spark (for aluminum/magnesium alloys)
   - 6: Cleaning Spark (reverse polarity cleaning)
 
 Saved JSON example:
