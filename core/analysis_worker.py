@@ -29,7 +29,7 @@ from core.attenuator_programmer import AttenuatorProgrammer
 from core.database import get_session
 from core.models import AnalyticalGroup
 
-import csv
+import pandas as pd
 import os
 
 
@@ -42,11 +42,11 @@ import os
 #
 # False:
 #   Displayed data comes from actual MCU ADC readings.
-SIMULATION_FROM_CSV = True
+SIMULATION_FROM_EXCEL = False
 
 # CSV file path.
 # If relative, it is resolved from the project root.
-SIMULATION_CSV_PATH = "job5_simulation.csv"
+SIMULATION_EXCEL_PATH = "simulation_data.csv"
 
 
 class AnalysisWorker(QThread):
@@ -157,10 +157,10 @@ class AnalysisWorker(QThread):
                 return
 
             # ── Step 5: Decide real ADC or CSV simulation output ────────
-            if SIMULATION_FROM_CSV:
-                self.progress.emit("Using CSV simulation data...", 82)
+            if SIMULATION_FROM_EXCEL:
+                self.progress.emit("Using Excel simulation data...", 82)
 
-                simulated_intensities = self._load_simulated_intensities_from_csv()
+                simulated_intensities = self._load_simulated_intensities_from_excel()
 
                 # Keep approximate raw_adc as well for reporting/debugging.
                 # The UI displays intensities.
@@ -169,7 +169,7 @@ class AnalysisWorker(QThread):
 
                 overflows = self._check_intensity_overflows(results)
 
-                print("[JOB5] MCU raw ADC was read but display data was replaced by CSV.", flush=True)
+                print("[JOB5] MCU raw ADC was read but display data was replaced by Excel.", flush=True)
                 print(f"[JOB5] MCU raw ADC: {raw_adc_from_mcu}", flush=True)
                 print(f"[JOB5] CSV intensities: {results}", flush=True)
 
@@ -190,7 +190,7 @@ class AnalysisWorker(QThread):
                 "raw_adc": raw_adc,
                 "intensities": results,
                 "overflows": overflows,
-                "simulation": SIMULATION_FROM_CSV,
+                "simulation": SIMULATION_FROM_EXCEL,
             })
 
         except Exception as e:
@@ -214,6 +214,7 @@ class AnalysisWorker(QThread):
                 return None
 
             return {
+                "group_name": group.name,  
                 "page_01_source": group.page_01_source,
                 "page_02_attenuator": group.page_02_attenuator,
                 "page_03_channel": group.page_03_channel,
@@ -223,102 +224,144 @@ class AnalysisWorker(QThread):
             session.close()
 
     # =========================================================================
-    # CSV Simulation
+    # Excel Simulation
     # =========================================================================
 
-    def _resolve_simulation_csv_path(self) -> str:
+    def _resolve_simulation_excel_path(self) -> str:
+
+        if os.path.isabs(SIMULATION_EXCEL_PATH):
+            return SIMULATION_EXCEL_PATH
+
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+
+        return os.path.join(
+            project_root,
+            SIMULATION_EXCEL_PATH
+        )
+
+
+    def _load_simulated_intensities_from_excel(self) -> dict:
         """
-        Resolve simulation CSV path.
+        Workbook:
 
-        Relative path is resolved from the project root.
+            simulation_data.xlsx
+
+        Sheets:
+
+            SUS
+            CARBON_STEEL
+            CAST_IRON
+
+        Sheet Format:
+
+            ITG | ELE | SAMPLE001 | SAMPLE002 | SAMPLE003
+
+        Example:
+
+            ITG,ELE,SAMPLE001,SAMPLE002
+            1,FE,0.851,0.850
+            2,CR,0.174,0.170
+            3,NI,0.083,0.081
         """
-        if os.path.isabs(SIMULATION_CSV_PATH):
-            return SIMULATION_CSV_PATH
 
-        # core/analysis_worker.py -> project root is one level above core
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-        return os.path.join(project_root, SIMULATION_CSV_PATH)
-
-    def _load_simulated_intensities_from_csv(self) -> dict:
-        """
-        Load fake/display intensities from CSV.
-
-        Expected format:
-            Element,SampleName
-            FE,0.552
-            C,0.481
-            SI,0.526
-
-        Behavior:
-        - First column must contain element/display name.
-        - If the current sample name exists as a column header, that column is used.
-        - Otherwise, the second column is used.
-        - These values are reused for every burn N=1, N=2, N=3...
-        """
-        path = self._resolve_simulation_csv_path()
+        path = self._resolve_simulation_excel_path()
 
         if not os.path.exists(path):
             raise FileNotFoundError(
-                f"Simulation CSV not found:\n{path}\n\n"
-                "Create job5_simulation.csv in the project root or set SIMULATION_FROM_CSV=False."
+                f"Simulation workbook not found:\n{path}"
             )
 
-        sample_name = self.params.get("sample_name", "").strip()
+        group_name = str(
+            self._group_data.get("group_name", "")
+        ).strip()
 
-        with open(path, "r", newline="", encoding="utf-8-sig") as f:
-            reader = csv.reader(f)
-            rows = list(reader)
-
-        if not rows:
-            raise ValueError("Simulation CSV is empty.")
-
-        header = [h.strip() for h in rows[0]]
-
-        if len(header) < 2:
+        if not group_name:
             raise ValueError(
-                "Simulation CSV must have at least two columns:\n"
-                "Element,<SampleName>"
+                "Analytical group name not found."
             )
 
-        # Default: use second column.
-        value_col_index = 1
+        try:
+            df = pd.read_excel(
+                path,
+                sheet_name=group_name
+            )
 
-        # If sample name exists as a column, use it.
-        if sample_name and sample_name in header:
-            value_col_index = header.index(sample_name)
+        except Exception:
+            raise ValueError(
+                f"Workbook does not contain sheet:\n{group_name}"
+            )
+
+        columns = [str(c).strip() for c in df.columns]
+
+        if len(columns) < 3:
+            raise ValueError(
+                f"Sheet '{group_name}' must contain:\n"
+                "ITG,ELE,<Sample Columns>"
+            )
+
+        sample_name = (
+            self.params.get("sample_name", "")
+            .strip()
+            .upper()
+        )
+
+        value_column = columns[2]
+
+        for col in columns[2:]:
+            if col.upper() == sample_name:
+                value_column = col
+                break
+
+        page3 = self._group_data.get(
+            "page_03_channel",
+            []
+        )
+
+        itg_to_display = {}
+
+        for entry in page3:
+
+            itg = str(
+                entry.get("itg", "")
+            ).strip()
+
+            if not itg:
+                continue
+
+            display_name = (
+                str(entry.get("name", "")).strip()
+                or str(entry.get("ele", "")).strip()
+                or f"ITG{itg}"
+            )
+
+            itg_to_display[itg] = display_name
 
         results = {}
 
-        for row in rows[1:]:
-            if not row or len(row) <= value_col_index:
+        for _, row in df.iterrows():
+
+            try:
+                itg = str(int(row["ITG"])).strip()
+            except Exception:
                 continue
 
-            element = row[0].strip()
-
-            if not element:
-                continue
-
-            value_text = row[value_col_index].strip()
-
-            if value_text == "":
+            if itg not in itg_to_display:
                 continue
 
             try:
-                value = float(value_text)
-            except ValueError:
-                raise ValueError(
-                    f"Invalid numeric value in simulation CSV:\n"
-                    f"Element: {element}\n"
-                    f"Value: {value_text}"
-                )
+                value = float(row[value_column])
+            except Exception:
+                continue
 
-            results[element] = value
+            display_name = itg_to_display[itg]
+
+            results[display_name] = value
 
         if not results:
             raise ValueError(
-                "No valid simulation values found in CSV.\n"
-                "Check that the first column contains element names and the second column contains values."
+                f"No simulation data loaded for group '{group_name}'."
             )
 
         return results
