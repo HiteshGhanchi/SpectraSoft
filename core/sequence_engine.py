@@ -16,10 +16,11 @@ class SequenceEngine:
         "3 Peak Spark":  0b1011,
         "Normal Spark":  0b1001,
         "Combined":      0b1000,
-        "Reverse":       0b1100,
+        "Reverse":       0b1111,
         "HighPower":     0b1010,
-        "Cleaning":      0b1000,  # placeholder
+        "Cleaning":      0b1100,  # placeholder
         "Lamp":          0b0000,
+
     }
 
     # Timing constants (matched with MCU firmware)
@@ -110,7 +111,7 @@ class SequenceEngine:
         time.sleep(integ_ms / 1000.0)
 
         # Port B integration condition
-        if not self.uart.send_command("O,B,16", wait_ack=True):
+        if not self.uart.send_command("O,B,20", wait_ack=True):
             return results
 
         # Read each element

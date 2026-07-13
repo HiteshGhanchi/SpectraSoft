@@ -11,134 +11,22 @@
       "itg": "2",
       "ele": "C",
       "name": "",
-      "seq": "1",
-      "ise_ref": 0
+      "seq": "2",
+      "ise_ref": 1
     },
     {
       "itg": "3",
       "ele": "SI",
       "name": "",
-      "seq": "1",
-      "ise_ref": 0
+      "seq": "2",
+      "ise_ref": 1
     },
     {
       "itg": "4",
       "ele": "MN1",
       "name": "",
       "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "5",
-      "ele": "MN2",
-      "name": "",
-      "seq": "3",
-      "ise_ref": 0
-    },
-    {
-      "itg": "6",
-      "ele": "P",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "7",
-      "ele": "S",
-      "name": "",
-      "seq": "1",
-      "ise_ref": 0
-    },
-    {
-      "itg": "8",
-      "ele": "NI1",
-      "name": "",
-      "seq": "1",
-      "ise_ref": 0
-    },
-    {
-      "itg": "11",
-      "ele": "CR2",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "9",
-      "ele": "NI2",
-      "name": "",
-      "seq": "3",
-      "ise_ref": 0
-    },
-    {
-      "itg": "10",
-      "ele": "CR1",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "12",
-      "ele": "MO",
-      "name": "",
-      "seq": "3",
-      "ise_ref": 0
-    },
-    {
-      "itg": "13",
-      "ele": "AL",
-      "name": "",
-      "seq": "1",
-      "ise_ref": 0
-    },
-    {
-      "itg": "14",
-      "ele": "V",
-      "name": "",
-      "seq": "3",
-      "ise_ref": 0
-    },
-    {
-      "itg": "15",
-      "ele": "NB",
-      "name": "",
-      "seq": "1",
-      "ise_ref": 0
-    },
-    {
-      "itg": "16",
-      "ele": "CU",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "17",
-      "ele": "TI",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "18",
-      "ele": "MG",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "19",
-      "ele": "As",
-      "name": "",
-      "seq": "2",
-      "ise_ref": 0
-    },
-    {
-      "itg": "20",
-      "ele": "Ar",
-      "name": "",
-      "seq": "1",
-      "ise_ref": 0
+      "ise_ref": 1
     }
   ]
 }
