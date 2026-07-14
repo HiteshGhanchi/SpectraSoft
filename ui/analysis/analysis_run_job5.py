@@ -768,6 +768,9 @@ class Job5RunPage(QWidget):
             </style>
         </head>
         <body>
+            <h2 style="color: #2c3e50; text-align: center; margin-bottom: 20px;">
+                Frontier Steel Alloys Ltd RANIA - {self.group_name}
+            </h2>
             <h3 style="color: #333333; margin-bottom: 20px; line-height: 1.5;">
                 Sample ID: {sample}<br>
                 ST Number: {st_number_text}<br>
