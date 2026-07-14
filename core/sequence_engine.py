@@ -280,13 +280,13 @@ wait_ack=True):
             self._progress(f"Sequence {seq_num}...", 10 + int(seq_num) * 20)
 
             source_name = page1_data.get(f"source_{seq_key}", "Normal Spark")
-            preburn_ms = int(page1_data.get(f"preburn_{seq_key}", 200))
-            integ_ms = int(page1_data.get(f"integ_{seq_key}", 300))
+            # Values from UI are in seconds, convert to ms for the engine
+            preburn_ms = int(page1_data.get(f"preburn_{seq_key}", 2)) * 1000
+            integ_ms = int(page1_data.get(f"integ_{seq_key}", 3)) * 1000
 
             # Skip sequence if integration time is 0
             if integ_ms == 0:
-                self._progress(f"SEQ{seq_num} skipped (integ=0)", 10 +
-int(seq_num) * 20)
+                self._progress(f"SEQ{seq_num} skipped (integ=0)", 10 + int(seq_num) * 20)
                 continue
 
             # ── Argon Flush ─────────────────────────────────────────────
@@ -303,8 +303,7 @@ int(seq_num) * 20)
 
             # ── Integration ─────────────────────────────────────────────
             # Get elements for this sequence
-            seq_elements = [e for e in page3_data if str(e.get("seq",
-"")) == seq_num]
+            seq_elements = [e for e in page3_data if str(e.get("seq", "")) == seq_num]
             if seq_elements:
                 seq_results = self.execute_integration(integ_ms, seq_elements)
                 all_results.update(seq_results)
@@ -319,7 +318,8 @@ int(seq_num) * 20)
             time.sleep(0.2)
 
         # ── Step 4: Clean ──────────────────────────────────────────────────
-        clean_ms = int(page1_data.get("clean_value", 0))
+        # Value from UI is in seconds, convert to ms
+        clean_ms = int(page1_data.get("clean_value", 0)) * 1000
         self.execute_clean(clean_ms)
         time.sleep(0.2)
 
