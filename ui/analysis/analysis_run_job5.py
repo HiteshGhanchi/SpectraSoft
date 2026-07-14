@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QMessageBox, QLineEdit,
     QProgressBar, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QFileDialog
+    QHeaderView, QAbstractItemView, QFileDialog, QInputDialog
 )
 from PyQt6.QtCore import Qt, QTimer, QDate, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QTextDocument, QPageLayout, QKeySequence, QShortcut
@@ -694,42 +694,63 @@ class Job5RunPage(QWidget):
     # =========================================================================
 
     def _on_print(self):
+        items = ["All Readings & Average", "Only Average"]
+        choice, ok = QInputDialog.getItem(
+            self, "Print Options", "Select what to print:", items, 0, False
+        )
+        if not ok:
+            return
+
+        include_readings = (choice == items[0])
+
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setPageOrientation(QPageLayout.Orientation.Landscape)
         preview = QPrintPreviewDialog(printer, self)
-        preview.paintRequested.connect(self._render_print_page)
+        preview.paintRequested.connect(lambda p: self._render_print_page(p, include_readings))
         preview.exec()
 
-    def _render_print_page(self, printer):
+    def _render_print_page(self, printer, include_readings: bool):
         doc = QTextDocument()
-        html = self._generate_html_report()
+        html = self._generate_html_report(include_readings)
         doc.setHtml(html)
         doc.print(printer)
 
-    def _generate_html_report(self) -> str:
+    def _generate_html_report(self, include_readings: bool) -> str:
         """Generate HTML report for printing."""
-        title = f"SpectraSoft Job 5 Report - {self.group_name}"
         timestamp = QDateTime.currentDateTime().toString("dd-MM-yyyy HH:mm:ss")
         sample = self.sample_name.text() if hasattr(self, 'sample_name') else "Unknown"
+        st_number_text = self.st_counter.text().replace("ST No.: ", "").strip()
+        if not st_number_text or st_number_text == "—":
+            st_number_text = "Unknown"
+
+        # Determine columns to print
+        cols_to_print = []
+        for col in range(self.table.columnCount()):
+            header_text = self.table.horizontalHeaderItem(col).text()
+            if not include_readings:
+                if header_text in ["Element", "AVE"]:
+                    cols_to_print.append(col)
+            else:
+                cols_to_print.append(col)
 
         # Build table rows
         rows = []
-        if self.table.rowCount() > 0 and self.table.columnCount() > 0:
+        if self.table.rowCount() > 0 and len(cols_to_print) > 0:
             for row in range(self.table.rowCount()):
                 row_html = "<tr>"
-                for col in range(self.table.columnCount()):
+                for col in cols_to_print:
                     item = self.table.item(row, col)
                     val = item.text() if item else ""
                     row_html += f"<td>{val}</td>"
                 row_html += "</tr>"
                 rows.append(row_html)
 
+        header_html = "".join(f"<th>{self.table.horizontalHeaderItem(c).text()}</th>" for c in cols_to_print)
+
         table_html = f"""
-        <table border="1" cellpadding="5" cellspacing="0">
+        <table border="1" cellpadding="5" cellspacing="0" width="100%" style="border-collapse: collapse; font-size: 10pt;">
             <thead>
-                <tr>
-                    {''.join(f'<th>{self.table.horizontalHeaderItem(i).text()}</th>' for i in range(self.table.columnCount()))}
-                </tr>
+                <tr>{header_html}</tr>
             </thead>
             <tbody>
                 {''.join(rows)}
@@ -742,26 +763,17 @@ class Job5RunPage(QWidget):
         <head>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                h1 {{ color: #2c3e50; }}
-                .meta {{ margin-bottom: 20px; }}
-                .meta td {{ padding: 2px 10px; }}
-                table {{ border-collapse: collapse; width: 100%; font-size: 10pt; }}
-                th {{ background-color: #34495e; color: white; padding: 6px 8px; }}
-                td {{ padding: 4px 8px; }}
+                th {{ background-color: #34495e; color: white; padding: 6px; }}
+                td {{ padding: 4px; text-align: center; }}
             </style>
         </head>
         <body>
-            <h1>{title}</h1>
-            <table class="meta">
-                <tr><td><b>Sample:</b> {sample}</td>
-                    <td><b>Date:</b> {timestamp}</td></tr>
-                <tr><td><b>Job:</b> 5 (INT.1)</td>
-                    <td><b>Burns:</b> {len(self.results)}</td></tr>
-            </table>
+            <h3 style="color: #333333; margin-bottom: 20px; line-height: 1.5;">
+                Sample ID: {sample}<br>
+                ST Number: {st_number_text}<br>
+                Date time: {timestamp}
+            </h3>
             {table_html}
-            <p style="margin-top:20px;font-size:9pt;color:#666;">
-                Generated by SpectraSoft
-            </p>
         </body>
         </html>
         """
