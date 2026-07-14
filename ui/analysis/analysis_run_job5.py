@@ -12,17 +12,39 @@ from PyQt6.QtWidgets import (
     QProgressBar, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QFileDialog
 )
-from PyQt6.QtCore import Qt, QTimer, QDate, QDateTime
+from PyQt6.QtCore import Qt, QTimer, QDate, QDateTime, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QTextDocument, QPageLayout, QKeySequence, QShortcut
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis_worker import AnalysisWorker
 from core.database import get_session
 from core.models import AnalyticalGroup
+from core.uart_manager import UARTManager
+from core.attenuator_programmer import AttenuatorProgrammer
 
 import csv
 import math
 
+
+class AttenuatorWorker(QThread):
+    progress = pyqtSignal(str, int)
+    finished_prog = pyqtSignal(int)
+    error = pyqtSignal(str)
+
+    def __init__(self, att_rows, uart):
+        super().__init__()
+        self.att_rows = att_rows
+        self.uart = uart
+
+    def run(self):
+        try:
+            from core.attenuator_programmer import AttenuatorProgrammer
+            programmer = AttenuatorProgrammer(self.uart)
+            count = programmer.program_all(self.att_rows, progress_cb=lambda msg, pct: self.progress.emit(msg, pct))
+            self.progress.emit("Done", 100)
+            self.finished_prog.emit(count)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class Job5RunPage(QWidget):
     """Job 5: Raw Intensity analysis page."""
@@ -41,7 +63,8 @@ class Job5RunPage(QWidget):
 
         # Counters for status footer
         self.an_count = 0          # Analysis number since last waste discharge
-        self.tan_count = 0         # Total number of emission times
+        self.is_ended = False
+        self.attenuators_set = False
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -87,6 +110,19 @@ class Job5RunPage(QWidget):
         self.hv_btn.setFixedWidth(80)
         self.hv_btn.clicked.connect(self._toggle_hv)
         title_layout.addWidget(self.hv_btn)
+
+        self.att_btn = QPushButton("Set Attenuators")
+        self.att_btn.setStyleSheet(
+            "QPushButton{"
+            "background:#17a2b8;"
+            "color:white;"
+            "border:2px outset #888888;"
+            "font:9pt Arial;"
+            "padding:2px 8px;"
+            "}"
+        )
+        self.att_btn.clicked.connect(self._on_set_attenuators)
+        title_layout.addWidget(self.att_btn)
 
         root.addWidget(title_bar)
 
@@ -239,6 +275,10 @@ class Job5RunPage(QWidget):
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_stop.setEnabled(False)
 
+        self.btn_end = QPushButton("F3: End")
+        self.btn_end.setStyleSheet(btn_style)
+        self.btn_end.clicked.connect(self._on_end)
+
         self.btn_print = QPushButton("F4: Print")
         self.btn_print.setStyleSheet(btn_style)
         self.btn_print.clicked.connect(self._on_print)
@@ -253,6 +293,7 @@ class Job5RunPage(QWidget):
 
         bbl.addWidget(self.btn_start)
         bbl.addWidget(self.btn_stop)
+        bbl.addWidget(self.btn_end)
         bbl.addWidget(self.btn_print)
         bbl.addWidget(self.btn_export)
         bbl.addWidget(self.btn_reset)
@@ -268,6 +309,7 @@ class Job5RunPage(QWidget):
         # ── Keyboard Shortcuts ────────────────────────────────────────────
         QShortcut(QKeySequence("F1"), self, activated=self._on_start)
         QShortcut(QKeySequence("F2"), self, activated=self._on_stop)
+        QShortcut(QKeySequence("F3"), self, activated=self._on_end)
         QShortcut(QKeySequence("F4"), self, activated=self._on_print)
         QShortcut(QKeySequence("F7"), self, activated=self._on_reset)
         QShortcut(QKeySequence("9"),  self, activated=self._on_cancel)
@@ -362,9 +404,9 @@ class Job5RunPage(QWidget):
             return
 
         num_burns = len(self.results)
-        # Columns: Element, AVE, N=1, N=2, ..., R, SD, CV
-        # Total columns = 1 (Element) + 1 (AVE) + num_burns + 3 (R,SD,CV)
-        num_cols = 2 + num_burns + 3
+        # Columns: Element, AVE, N=1, N=2...
+        # Total columns = 1 (Element) + 1 (AVE) + num_burns
+        num_cols = 2 + num_burns
 
         self.table.setRowCount(len(self.element_names))
         self.table.setColumnCount(num_cols)
@@ -372,7 +414,6 @@ class Job5RunPage(QWidget):
         headers = ["Element", "AVE"]
         for i in range(num_burns):
             headers.append(f"N={i+1}")
-        headers.extend(["R", "S.D.", "C.V."])
 
         self.table.setHorizontalHeaderLabels(headers)
 
@@ -381,9 +422,6 @@ class Job5RunPage(QWidget):
         self.table.setColumnWidth(1, 70)
         for i in range(num_burns):
             self.table.setColumnWidth(2 + i, 70)
-        self.table.setColumnWidth(2 + num_burns, 60)    # R
-        self.table.setColumnWidth(3 + num_burns, 60)    # S.D.
-        self.table.setColumnWidth(4 + num_burns, 60)    # C.V.
 
         # Fill data
         for row, elem in enumerate(self.element_names):
@@ -400,8 +438,11 @@ class Job5RunPage(QWidget):
 
             if values:
                 # Average
-                avg = sum(values) / len(values)
-                avg_item = QTableWidgetItem(f"{avg:.3f}")
+                if getattr(self, "is_ended", False):
+                    avg = sum(values) / len(values)
+                    avg_item = QTableWidgetItem(f"{avg:.3f}")
+                else:
+                    avg_item = QTableWidgetItem("")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
@@ -410,32 +451,6 @@ class Job5RunPage(QWidget):
                     val_item = QTableWidgetItem(f"{val:.3f}")
                     val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                     self.table.setItem(row, 2 + i, val_item)
-
-                # R (Range)
-                r_val = max(values) - min(values)
-                r_item = QTableWidgetItem(f"{r_val:.3f}")
-                r_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 2 + num_burns, r_item)
-
-                # S.D. (sample standard deviation)
-                if len(values) > 1:
-                    mean = avg
-                    variance = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
-                    sd = math.sqrt(variance)
-                else:
-                    sd = 0.0
-                sd_item = QTableWidgetItem(f"{sd:.3f}")
-                sd_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 3 + num_burns, sd_item)
-
-                # C.V. (Coefficient of Variation)
-                if avg != 0:
-                    cv = (sd / avg) * 100
-                else:
-                    cv = 0.0
-                cv_item = QTableWidgetItem(f"{cv:.2f}%")
-                cv_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-                self.table.setItem(row, 4 + num_burns, cv_item)
 
         self.table.resizeRowsToContents()
 
@@ -482,15 +497,25 @@ class Job5RunPage(QWidget):
 
     def _update_footer_counts(self):
         self.an_label.setText(f"AN: {self.an_count}")
-        self.tan_label.setText(f"TAN: {self.tan_count}")
+        self.tan_label.setText(f"TAN: {getattr(self.main_window, 'tan_count', 0)}")
 
     # =========================================================================
     # Actions
     # =========================================================================
 
     def _on_start(self):
+        if not self.attenuators_set:
+            QMessageBox.warning(self, "Attenuators Not Set", "Please set the attenuators before starting the analysis.")
+            return
+
         if self.worker and self.worker.isRunning():
             return
+
+        if getattr(self, "is_ended", False):
+            self.results = []
+            self.is_ended = False
+            self.st_counter.setText("ST No.: —")
+            self._update_table()
 
         # Check HV
         if not self.main_window.get_hv_status():
@@ -546,9 +571,7 @@ class Job5RunPage(QWidget):
         else:
             data = results
 
-        # Increment counters
-        self.an_count += 1
-        self.tan_count += 1
+        # Update counters
         self._update_footer_counts()
 
         # Store result
@@ -575,6 +598,81 @@ class Job5RunPage(QWidget):
 
         if self.status_label.text() == "Stopping...":
             self.status_label.setText("Stopped")
+
+    def _on_end(self):
+        if not self.results:
+            return
+        if getattr(self, "is_ended", False):
+            return
+        self.is_ended = True
+        self.an_count += 1
+        self.main_window.tan_count = getattr(self.main_window, 'tan_count', 0) + 1
+        self._update_footer_counts()
+        self._update_table()
+        self.status_label.setText("Sample ended. Press Start for next sample.")
+
+    def _on_set_attenuators(self):
+        if self.worker and self.worker.isRunning():
+            QMessageBox.warning(self, "Warning", "Analysis is currently running.")
+            return
+
+        if hasattr(self, 'att_worker') and self.att_worker.isRunning():
+            return
+
+        # Check HV
+        if not self.main_window.get_hv_status():
+            reply = QMessageBox.question(
+                self,
+                "HV is OFF",
+                "PMT power (HV) is OFF. Turn it ON before setting attenuators?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.main_window.toggle_hv()
+                self._update_hv_button()
+                self._update_footer_hv()
+            else:
+                return
+
+        self.btn_start.setEnabled(False)
+        self.att_btn.setEnabled(False)
+        self.status_label.setText("Preparing to program attenuators...")
+        self.progress_bar.setValue(0)
+
+        # Get data from database
+        session = get_session()
+        try:
+            group = session.get(AnalyticalGroup, self.group_id)
+            if not group:
+                self.status_label.setText("Error: Group not found.")
+                self.btn_start.setEnabled(True)
+                self.att_btn.setEnabled(True)
+                return
+            att_rows = group.page_02_attenuator.get("rows", []) if group.page_02_attenuator else []
+        finally:
+            session.close()
+
+        uart = UARTManager()
+        if not uart.connect():
+            QMessageBox.critical(self, "Hardware Error", "Could not connect to hardware.")
+            self.status_label.setText("Hardware connection failed.")
+            self.btn_start.setEnabled(True)
+            self.att_btn.setEnabled(True)
+            return
+
+        self.att_worker = AttenuatorWorker(att_rows, uart)
+        self.att_worker.progress.connect(self._on_progress)
+        self.att_worker.error.connect(self._on_error)
+        self.att_worker.finished_prog.connect(self._on_att_finished)
+        self.att_worker.start()
+
+    def _on_att_finished(self, count):
+        self.attenuators_set = True
+        self.btn_start.setEnabled(True)
+        self.att_btn.setEnabled(True)
+        self.status_label.setText(f"Attenuators programmed successfully ({count}/45).")
+        self.progress_bar.setValue(100)
+        QMessageBox.information(self, "Attenuators Set", f"Programmed {count} attenuator values.")
 
     def _on_reset(self):
         """Reset all burns for current sample."""
@@ -689,10 +787,9 @@ class Job5RunPage(QWidget):
                 writer = csv.writer(f)
 
                 # Header
-                headers = ["Element"]
-                for i in range(len(self.results)):
-                    headers.append(f"N={i+1}")
-                headers.extend(["AVE", "R", "S.D.", "C.V."])
+                headers = []
+                for i in range(self.table.columnCount()):
+                    headers.append(self.table.horizontalHeaderItem(i).text())
                 writer.writerow(headers)
 
                 # Data

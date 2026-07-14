@@ -17,12 +17,13 @@ class AttenuatorProgrammer:
     def __init__(self, uart: UARTManager):
         self.uart = uart
 
-    def program_all(self, att_rows: List[Dict]) -> int:
+    def program_all(self, att_rows: List[Dict], progress_cb: Optional[callable] = None) -> int:
         """
         Program attenuator values for all elements.
 
         Args:
             att_rows: List of dicts with 'itg_no' and 'att_value'
+            progress_cb: Optional callback function taking (message, percentage)
 
         Returns:
             Number of elements successfully programmed.
@@ -43,6 +44,10 @@ class AttenuatorProgrammer:
 
             elem_cmd = f"O,A,{idx:02X}"           # ele1 → 0x00
             att_cmd = f"O,A,{att_cmd_byte:02X}"   # att 0 → 0x40
+
+            if progress_cb:
+                pct = int((idx / self.TOTAL_ELEMENTS) * 100)
+                progress_cb(f"Programming attenuator for ele{itg}...", pct)
 
             print(f"  ele{itg}: att={att_val} -> {att_cmd}")
 

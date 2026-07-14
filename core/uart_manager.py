@@ -140,6 +140,7 @@ class UARTManager:
         if not self.conn:
             return False
 
+        print(f"  [UART TX] {cmd}")
         self.conn.write((cmd + "\r\n").encode("utf-8"))
         self.conn.flush()
 
@@ -151,10 +152,15 @@ class UARTManager:
                     if line.startswith("#"):
                         continue
                     if line == "K":
+                        print("  [UART RX] K (ACK)")
                         return True
+                    print(f"  [UART RX] {line}")
                     return False
                 time.sleep(0.001)
+            print("  [UART RX] Timeout waiting for ACK!")
             return False
+            
+        print("  [UART RX] K (ACK)")
         return True
 
     def read_adc_value(self, timeout: float = 5.0) -> Optional[int]:

@@ -105,14 +105,8 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 3: Program attenuator (ATT) values ───────────────
-            # This is ALWAYS done before any burn. The ATT values are
-            # stored on Page 2 and set the gain for each PMT channel.
-            self.progress.emit("Programming attenuators...", 15)
-            att_rows = self._group_data.get("page_02_attenuator", {}).get("rows", [])
-            programmer = AttenuatorProgrammer(uart)
-            prog_count = programmer.program_all(att_rows)
-            print(f"  Programmed {prog_count} attenuators")
+            # ── Step 3: Program attenuator (ATT) values (Removed per user request) ────────
+            # Now handled by a dedicated 'Set Attenuators' button in the UI.
 
             if self._abort:
                 self.error.emit("Aborted by user.")

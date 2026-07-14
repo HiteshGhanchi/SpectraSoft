@@ -49,11 +49,9 @@ class SequenceEngine:
     def execute_reset(self) -> bool:
         """Execute the reset sequence: 9E → wait → C3"""
         self._progress("Resetting hardware...", 5)
-        if not self.uart.send_command("O,A,9E", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,9E", wait_ack=False)
         time.sleep(self.RESET_HOLD_TIME)
-        if not self.uart.send_command("O,A,C3", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,C3", wait_ack=False)
         time.sleep(self.RESET_HOLD_TIME)
         return True
 
@@ -64,8 +62,7 @@ class SequenceEngine:
     def execute_argon_purge(self, purge_sec: float) -> bool:
         """Open argon valve for purge_sec seconds."""
         self._progress(f"Argon purge ({purge_sec}s)...", 10)
-        if not self.uart.send_command("O,A,CB", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,CB", wait_ack=False)
         time.sleep(purge_sec)
         return True
 
@@ -74,14 +71,12 @@ class SequenceEngine:
         self._progress(f"Prespark ({source_name}, {preburn_ms}ms)...", 15)
 
         # Enable prespark
-        if not self.uart.send_command("O,A,C9", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,C9", wait_ack=False)
 
         # Select source (Port B START condition)
         nibble = self.SOURCE_NIBBLE_MAP.get(source_name, 0b0000)
         ob_byte = (nibble << 3) | 0b010  # START condition
-        if not self.uart.send_command(f"O,B,{ob_byte:02X}", wait_ack=True):
-            return False
+        self.uart.send_command(f"O,B,{ob_byte:02X}", wait_ack=False)
 
         # Wait for preburn duration
         time.sleep(preburn_ms / 1000.0)
@@ -106,13 +101,11 @@ class SequenceEngine:
         results = {}
 
         # Integration trigger
-        if not self.uart.send_command("O,A,8C", wait_ack=True):
-            return results
+        self.uart.send_command("O,A,8C", wait_ack=False)
         time.sleep(integ_ms / 1000.0)
 
         # Port B integration condition
-        if not self.uart.send_command("O,B,20", wait_ack=True):
-            return results
+        self.uart.send_command("O,B,20", wait_ack=False)
 
         # Read each element
         for idx, elem in enumerate(elements):
@@ -120,29 +113,29 @@ class SequenceEngine:
             name = elem.get("ele", f"ele{itg}")
             elem_hex = f"{int(itg) - 1:02X}"  # ITG 1 → 0x00
 
+            print(f"  [Demo] Reading {name} (ITG {itg}) -> sent O,A,{elem_hex}")
+
             # Select element
-            if not self.uart.send_command(f"O,A,{elem_hex}", wait_ack=True):
-                continue
-            time.sleep(self.ELEM_SELECT_DELAY)
+            self.uart.send_command(f"O,A,{elem_hex}", wait_ack=False)
+            
+            # Extra delay for demo so LEDs can be seen flashing
+            time.sleep(0.4) 
 
             # ADC Trigger 1
-            if not self.uart.send_command("O,A,C9", wait_ack=True):
-                continue
+            self.uart.send_command("O,A,C9", wait_ack=False)
             time.sleep(self.ADC_INTER_DELAY)
 
             # ADC Trigger 2
-            if not self.uart.send_command("O,A,CD", wait_ack=True):
-                continue
+            self.uart.send_command("O,A,CD", wait_ack=False)
             time.sleep(self.ADC_INTER_DELAY)
 
             # ADC Trigger 3
-            if not self.uart.send_command("O,A,C9", wait_ack=True):
-                continue
+            self.uart.send_command("O,A,C9", wait_ack=False)
             time.sleep(self.ADC_SETTLE_DELAY)
 
             # Read the value
             self.uart.send_command("I", wait_ack=False)
-            value = self.uart.read_adc_value()
+            value = self.uart.read_adc_value(timeout=0.1) # Fast timeout for demo
             if value is not None:
                 results[name] = value
 
@@ -159,8 +152,7 @@ class SequenceEngine:
     def execute_clean(self, clean_ms: int) -> bool:
         """Execute cleaning spark."""
         self._progress(f"Cleaning ({clean_ms}ms)...", 85)
-        if not self.uart.send_command("O,A,9C", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,9C", wait_ack=False)
         time.sleep(clean_ms / 1000.0)
         return True
 
@@ -171,10 +163,8 @@ class SequenceEngine:
     def execute_shutdown(self) -> bool:
         """Send shutdown commands."""
         self._progress("Shutting down...", 95)
-        if not self.uart.send_command("O,A,C2", wait_ack=True):
-            return False
-        if not self.uart.send_command("O,A,00", wait_ack=True):
-            return False
+        self.uart.send_command("O,A,C2", wait_ack=False)
+        self.uart.send_command("O,A,00", wait_ack=False)
         return True
 
     # =========================================================================

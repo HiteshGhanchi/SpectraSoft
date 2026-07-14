@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
         self._build_body()
         self._build_status_bar()
         self.hv_on = False
+        self.tan_count = 0
         
     # =========================================================================
     # HV Toggle
