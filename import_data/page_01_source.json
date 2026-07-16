@@ -1,14 +1,14 @@
 {
   "purge_seq1": "3",
-  "source_seq1": "1: Normal Spark",
-  "source_seq2": "3: Combined Spark",
-  "source_seq3": "4: Oscillation Spark",
-  "source_clean": "5: Cleaning Spark",
+  "source_seq1": "9: Normal Spark",
+  "source_seq2": "B: Combined Spark",
+  "source_seq3": "0: Fatigue Lamp",
+  "source_clean": "C: Cleaning Spark",
   "preburn_seq1": "3",
-  "preburn_seq2": "2",
-  "preburn_seq3": "4",
-  "integ_seq1": "3",
-  "integ_seq2": "3",
-  "integ_seq3": "3",
+  "preburn_seq2": "3",
+  "preburn_seq3": "0",
+  "integ_seq1": "6",
+  "integ_seq2": "6",
+  "integ_seq3": "0",
   "clean_value": "5"
 }
