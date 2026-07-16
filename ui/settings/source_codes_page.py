@@ -143,6 +143,8 @@ class SourceCodesPage(QWidget):
         table_layout.setSpacing(0)
         table_layout.addWidget(self.table)
 
+        self.table.itemChanged.connect(self._on_table_item_changed)
+
         ml.addWidget(table_frame)
 
         # ── Buttons ──────────────────────────────────────────────────────
@@ -234,7 +236,7 @@ class SourceCodesPage(QWidget):
 
     # Actions
 
-    def _on_save(self):
+    def _persist(self, show_message: bool = True):
         rows = self._collect()
         session = get_session()
         try:
@@ -248,19 +250,28 @@ class SourceCodesPage(QWidget):
             session.commit()
             # ── Mirror to import_data/source_codes.json ─────────────────
             export_source_codes(rows)
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setWindowTitle("Saved")
-            msg.setText("Source codes saved successfully.")
-            msg.setStyleSheet(
-                "QLabel { color: black; }"
-                "QPushButton { color: black; background-color: #d4d0c8; border: 1px solid gray; min-width: 60px; padding: 4px; }"
-            )
-            msg.exec()
-            # make the Source codes saved successfullly black text in the Qmessage
-            
+            if show_message:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("Saved")
+                msg.setText("Source codes saved successfully.")
+                msg.setStyleSheet(
+                    "QLabel { color: black; }"
+                    "QPushButton { color: black; background-color: #d4d0c8; border: 1px solid gray; min-width: 60px; padding: 4px; }"
+                )
+                msg.exec()
         finally:
             session.close()
+
+    def _on_table_item_changed(self, item):
+        if item is None or item.column() != 1:
+            return
+        if self.table.signalsBlocked():
+            return
+        self._persist(show_message=False)
+
+    def _on_save(self):
+        self._persist(show_message=True)
 
     def _on_export(self):
         path, _ = QFileDialog.getSaveFileName(
