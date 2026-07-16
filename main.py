@@ -5,7 +5,11 @@ Run:  python main.py
 
 import sys
 import os
+import platform
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+if sys.version_info < (3, 9):
+    raise RuntimeError("SpectraSoft requires Python 3.9 or newer.")
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
