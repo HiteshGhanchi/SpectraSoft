@@ -39,6 +39,9 @@ class SequenceEngine:
     # ─────────────────────────────────────────────────────────────────────
     STOP_BIT  = 0x10   # Port B bit 4 ("B" / stop condition)
     START_BIT = 0x20   # Port B bit 5 ("C" / start condition)
+    PULSE_DURATION = 0.050  # 50ms dwell time between HIGH and LOW writes,
+                            # so the hardware has time to latch/sample the
+                            # HIGH state before it's dropped back to LOW
 
     # Timing constants (matched with MCU firmware)
     ELEM_SELECT_DELAY = 0.100   # 100ms after element select
@@ -75,6 +78,7 @@ class SequenceEngine:
         if not self.uart.send_command(f"O,B,{self.STOP_BIT:02X}",
 wait_ack=True):
             return False
+        time.sleep(self.PULSE_DURATION)   # hold HIGH for 50ms so it latches
         # STOP bit LOW
         if not self.uart.send_command("O,B,00", wait_ack=True):
             return False
@@ -132,6 +136,7 @@ wait_ack=True):
         if not self.uart.send_command(f"O,B,{ob_byte_start_high:02X}",
 wait_ack=True):
             return False
+        time.sleep(self.PULSE_DURATION)   # hold HIGH for 50ms so it latches
         if not self.uart.send_command(f"O,B,{ob_byte_start_low:02X}",
 wait_ack=True):
             return False
@@ -144,7 +149,7 @@ wait_ack=True):
     # STEP 3: INTEGRATION + ADC READS
     # =========================================================================
 
-    def execute_integration(self, integ_ms: int, elements: List[Dict])->Dict[str, int]:
+    def execute_integration(self, integ_ms: int, elements: List[Dict])-> Dict[str, int]:
         """
         Execute integration and read ADC for each element.
 
@@ -172,6 +177,7 @@ wait_ack=True):
             itg = elem.get("itg", 0)
             name = elem.get("ele", f"ele{itg}")
             elem_hex = f"{int(itg) - 1:02X}"  # ITG 1 → 0x00
+
             # Select element
             if not self.uart.send_command(f"O,A,{elem_hex}", wait_ack=True):
                 continue
@@ -280,13 +286,13 @@ wait_ack=True):
             self._progress(f"Sequence {seq_num}...", 10 + int(seq_num) * 20)
 
             source_name = page1_data.get(f"source_{seq_key}", "Normal Spark")
-            # Values from UI are in seconds, convert to ms for the engine
-            preburn_ms = int(page1_data.get(f"preburn_{seq_key}", 2)) * 1000
-            integ_ms = int(page1_data.get(f"integ_{seq_key}", 3)) * 1000
+            preburn_ms = int(page1_data.get(f"preburn_{seq_key}", 200))
+            integ_ms = int(page1_data.get(f"integ_{seq_key}", 300))
 
             # Skip sequence if integration time is 0
             if integ_ms == 0:
-                self._progress(f"SEQ{seq_num} skipped (integ=0)", 10 + int(seq_num) * 20)
+                self._progress(f"SEQ{seq_num} skipped (integ=0)", 10 +
+int(seq_num) * 20)
                 continue
 
             # ── Argon Flush ─────────────────────────────────────────────
@@ -303,7 +309,8 @@ wait_ack=True):
 
             # ── Integration ─────────────────────────────────────────────
             # Get elements for this sequence
-            seq_elements = [e for e in page3_data if str(e.get("seq", "")) == seq_num]
+            seq_elements = [e for e in page3_data if str(e.get("seq",
+"")) == seq_num]
             if seq_elements:
                 seq_results = self.execute_integration(integ_ms, seq_elements)
                 all_results.update(seq_results)
@@ -318,8 +325,7 @@ wait_ack=True):
             time.sleep(0.2)
 
         # ── Step 4: Clean ──────────────────────────────────────────────────
-        # Value from UI is in seconds, convert to ms
-        clean_ms = int(page1_data.get("clean_value", 0)) * 1000
+        clean_ms = int(page1_data.get("clean_value", 0))
         self.execute_clean(clean_ms)
         time.sleep(0.2)
 
