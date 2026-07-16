@@ -6,6 +6,8 @@ Executes the full burn sequence using UARTManager.
 import json
 import time
 from typing import Dict, List, Optional, Callable
+from core.database import get_session
+from core.models import SourceCode
 from core.uart_manager import UARTManager
 
 class SequenceEngine:
@@ -29,7 +31,7 @@ class SequenceEngine:
     # Pass a different path into SequenceEngine(..., source_codes_path=...)
     # if your project stores it elsewhere.
     # ─────────────────────────────────────────────────────────────────────
-    SOURCE_CODES_PATH = "data.db/source_codes.json"
+    SOURCE_CODES_PATH = None
 
     # ─────────────────────────────────────────────────────────────────────
     # PORT B BYTE LAYOUT (7 bits used, sent over UART as "O,B,<hex>")
@@ -75,24 +77,23 @@ Optional[str] = None):
     # SOURCE CODE LOOKUP HELPERS
     # =========================================================================
 
-    def _load_source_codes(self, path: str) -> Dict[str, int]:
+    def _load_source_codes(self, path: Optional[str] = None) -> Dict[str, int]:
         """
-        Load source_codes.json and build a {name: nibble} map.
-        entry_no (0-15) is used directly as the 4-bit nibble (0x0-0xF).
-        Entries with an empty name are skipped.
+        Load source code names from the database and build a {name: nibble} map.
+        The SQLite table is the source of truth for runtime execution.
         """
         mapping: Dict[str, int] = {}
+        session = get_session()
         try:
-            with open(path, "r") as f:
-                data = json.load(f)
-            for entry in data.get("source_codes", []):
-                name = (entry.get("name") or "").strip()
-                entry_no = entry.get("entry_no")
-                if name and entry_no is not None:
-                    mapping[name] = int(entry_no) & 0x0F
-        except (FileNotFoundError, json.JSONDecodeError, OSError,
-ValueError) as e:
-            print(f"[SequenceEngine] Warning: could not load source codes from '{path}': {e}")
+            rows = session.query(SourceCode).order_by(SourceCode.entry_no).all()
+            for row in rows:
+                name = (row.name or "").strip()
+                if name and row.entry_no is not None:
+                    mapping[name] = int(row.entry_no) & 0x0F
+        except Exception as e:
+            print(f"[SequenceEngine] Warning: could not load source codes from DB: {e}")
+        finally:
+            session.close()
         return mapping
 
     def reload_source_codes(self, path: Optional[str] = None) -> None:
@@ -371,6 +372,7 @@ wait_ack=True):
             return all_results
 
         # ── Step 1: Reset ──────────────────────────────────────────────────
+        self._progress("Resetting hardware...", 8)
         if not self.execute_reset():
             self._progress("Reset failed!", 0)
             return all_results
@@ -380,6 +382,7 @@ wait_ack=True):
         # purge_seq1 is the single purge duration used for the entire run
         # (there is no purge_seq2 / purge_seq3 in the JSON — CB fires once).
         purge_sec = float(page1_data.get("purge_seq1", 3))
+        self._progress(f"Argon purge ({purge_sec}s)...", 18)
         if not self.execute_argon_purge(purge_sec):
             self._progress("Argon purge failed!", 0)
             return all_results
@@ -389,20 +392,28 @@ wait_ack=True):
         seq_keys = {"1": "seq1", "2": "seq2", "3": "seq3"}
 
         for seq_num, seq_key in seq_keys.items():
-            self._progress(f"Sequence {seq_num}...", 10 + int(seq_num) * 20)
+            seq_base = 22 + (int(seq_num) - 1) * 22
+            self._progress(f"Sequence {seq_num} start...", seq_base)
 
-            # source_{seq_key} now arrives as "N: Name", e.g. "3:
-Combined Spark"
             source_name = page1_data.get(f"source_{seq_key}", "1: Normal Spark")
-            # Values from UI are in seconds, convert to ms for the engine
-            preburn_ms = int(page1_data.get(f"preburn_{seq_key}", 2)) * 1000
-            integ_ms = int(page1_data.get(f"integ_{seq_key}", 3)) * 1000
+            preburn_value = page1_data.get(f"preburn_{seq_key}", "0")
+            integ_value = page1_data.get(f"integ_{seq_key}", "0")
 
-            # Skip sequence if integration time is 0
-            if integ_ms == 0:
-                self._progress(f"SEQ{seq_num} skipped (integ=0)", 10 +
-int(seq_num) * 20)
+            try:
+                preburn_ms = int(float(preburn_value)) * 1000
+            except (TypeError, ValueError):
+                preburn_ms = 0
+
+            try:
+                integ_ms = int(float(integ_value)) * 1000
+            except (TypeError, ValueError):
+                integ_ms = 0
+
+            if integ_ms <= 0:
+                self._progress(f"SEQ{seq_num} skipped (integ=0)", seq_base + 5)
                 continue
+
+            self._progress(f"SEQ{seq_num} preburn...", seq_base + 3)
 
             # ── Prespark (C9) — runs once per sequence's preburn duration ──
             if not self.execute_prespark(source_name, preburn_ms):
@@ -411,9 +422,9 @@ int(seq_num) * 20)
             time.sleep(0.2)
 
             # ── Integration ─────────────────────────────────────────────
+            self._progress(f"SEQ{seq_num} integration...", seq_base + 10)
             # Get elements for this sequence
-            seq_elements = [e for e in page3_data if str(e.get("seq",
-"")) == seq_num]
+            seq_elements = [e for e in page3_data if str(e.get("seq", "")) == seq_num]
             if seq_elements:
                 seq_results = self.execute_integration(integ_ms, seq_elements)
                 all_results.update(seq_results)
@@ -422,20 +433,22 @@ int(seq_num) * 20)
             # ── Post-integration stop-bit pulse ──────────────────────────
             # After integration completes for this sequence: pulse Port B
             # STOP bit (0x10) HIGH then LOW. Repeated for every sequence.
+            self._progress(f"SEQ{seq_num} complete", seq_base + 18)
             if not self.pulse_stop_bit():
-                self._progress(f"Post-integration stop-bit pulse
-failed in SEQ{seq_num}", 0)
+                self._progress(f"Post-integration stop-bit pulse failed in SEQ{seq_num}", 0)
                 return all_results
             time.sleep(0.2)
 
         # ── Step 4: Clean ──────────────────────────────────────────────────
         # Value from UI is in seconds, convert to ms
         clean_ms = int(page1_data.get("clean_value", 0)) * 1000
+        self._progress("Cleaning...", 90)
         self.execute_clean(clean_ms)
         time.sleep(0.2)
 
         # ── Stop bit ON (after Clean, before Shutdown) ──────────────────────
         # Set Port B STOP bit (0x10) HIGH and leave it high (no pulse-low).
+        self._progress("Shutting down...", 98)
         if not self.set_stop_bit_on():
             self._progress("Stop-bit ON failed!", 0)
             return all_results

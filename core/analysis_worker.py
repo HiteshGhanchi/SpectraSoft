@@ -119,7 +119,7 @@ class AnalysisWorker(QThread):
             # overridden with pre-stored CSV values for the sample.
             self.progress.emit("Running burn sequence...", 20)
             sequence = SequenceEngine(uart)
-            sequence.execute_full_sequence(
+            sequence_results = sequence.execute_full_sequence(
                 page1_data=self._group_data.get("page_01_source", {}),
                 page3_data=self._group_data.get("page_03_channel", []),
                 progress_cb=lambda s, p: self.progress.emit(s, p)
@@ -129,20 +129,21 @@ class AnalysisWorker(QThread):
                 self.error.emit("Aborted by user.")
                 return
 
-            # ── Step 4b: Override ADC with CSV values (Demo Mode) ─────────
-            # Hardware has already executed the full sequence above.
-            # Now substitute pre-stored values from sequence_data.csv
-            # (which we validated at the very beginning of this run).
-            self.progress.emit("Loading CSV values...", 82)
-            
-            if csv_data:
+            # ── Step 4b: Use the live ADC results from the sequence run when available.
+            # CSV values are only a fallback when the hardware run did not return data.
+            self.progress.emit("Processing sequence results...", 82)
+            raw_adc = sequence_results or {}
+
+            if raw_adc:
+                self.progress.emit("Using live ADC readings from the sequence run...", 85)
+                results = self._apply_ise_ratio(raw_adc)
+            elif csv_data:
+                self.progress.emit("No live ADC data — using CSV fallback values...", 85)
                 raw_adc = csv_data
-                self.progress.emit("Using exact CSV values for Demo Mode...", 85)
-                results = raw_adc  # Bypass ISE division so floats like 3.59 stay 3.59
+                results = raw_adc
             else:
-                self.progress.emit("No CSV data for this ST — using live readings.", 83)
-                raw_adc = {} # If no hardware, this stays empty
-                self.progress.emit("Processing intensities...", 85)
+                self.progress.emit("No live ADC data or CSV fallback — using empty results.", 83)
+                raw_adc = {}
                 results = self._apply_ise_ratio(raw_adc)
 
             # ── Step 6: Emit results ─────────────────────────────────────

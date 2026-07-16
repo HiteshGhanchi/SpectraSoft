@@ -3,7 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QTableWidgetItem
 
 from ui.settings.source_codes_page import SourceCodesPage
 
@@ -49,8 +49,9 @@ def test_editing_cell_persists_to_json(tmp_path, monkeypatch):
     monkeypatch.setattr("ui.settings.source_codes_page.export_source_codes", fake_export)
 
     page = SourceCodesPage(main_window=None)
-    page.table.item(0, 1).setText("Alpha")
-    page.table.itemChanged.emit(page.table.item(0, 1))
+    item = QTableWidgetItem("Alpha")
+    page.table.setItem(0, 1, item)
+    page.table.itemChanged.emit(item)
 
     assert fake_session.commits >= 1
     assert exported_path.exists()
