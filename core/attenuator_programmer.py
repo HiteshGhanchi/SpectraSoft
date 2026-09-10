@@ -42,7 +42,11 @@ class AttenuatorProgrammer:
             att_val = att_map.get(itg, 0)
             att_cmd_byte = att_val + self.ATT_OFFSET
 
-            elem_cmd = f"O,A,{idx:02X}"           # ele1 → 0x00
+            # Element address: idx is 0-based, formatted as 2-digit uppercase hex.
+            # For channels 10–15 (idx 9–14), hex addresses are 09–0E (A–F range).
+            # {:02X} handles the full 0–9, A–F range correctly.
+            # Do NOT parse these as decimal integers.
+            elem_cmd = f"O,A,{idx:02X}"           # ele1 → 0x00, ele10 → 0x09, ele11 → 0x0A
             att_cmd = f"O,A,{att_cmd_byte:02X}"   # att 0 → 0x40
 
             if progress_cb:

@@ -17,8 +17,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SpectraSoft")
         
-        # Fixed size — window cannot be resized
-        self.setFixedSize(1100, 680)
+        # Resizable window — set minimum size and initial size
+        self.setMinimumSize(1100, 680)
+        self.resize(1100, 680)
 
         self._current_action = None
 
@@ -34,8 +35,17 @@ class MainWindow(QMainWindow):
 
     def toggle_hv(self):
         self.hv_on = not self.hv_on
-        # TODO: Send command to MCU
-        # For simulation, just toggle
+        # Send the HV command to hardware if a UART connection is available.
+        uart = getattr(self, '_uart', None)
+        if uart and uart.is_connected:
+            from core.hv_controller import HVController
+            hvc = HVController(uart)
+            if self.hv_on:
+                # HV ON: enable the HV supply (sends address 0x00 as a general enable)
+                uart.send_command("O,A,C9", wait_ack=True)
+            else:
+                # HV OFF: zero-out Port A
+                hvc.set_hv_off()
         return self.hv_on
 
     def get_hv_status(self):

@@ -277,7 +277,12 @@ wait_ack=True):
         for idx, elem in enumerate(elements):
             itg = elem.get("itg", 0)
             name = elem.get("ele", f"ele{itg}")
-            elem_hex = f"{int(itg) - 1:02X}"  # ITG 1 → 0x00
+            # Convert ITG number to 0-based hex address.
+            # ITG 1  → 0x00, ITG 9 → 0x08, ITG 10 → 0x09,
+            # ITG 11 → 0x0A, ITG 12 → 0x0B, ..., ITG 16 → 0x0F.
+            # {:02X} produces correct uppercase hex for the full range 0-9, A-F.
+            # Do NOT use decimal-only validation (e.g. isdigit()) on these values.
+            elem_hex = f"{int(itg) - 1:02X}"   # ITG 1 → 0x00
             # Select element
             if not self.uart.send_command(f"O,A,{elem_hex}", wait_ack=True):
                 continue

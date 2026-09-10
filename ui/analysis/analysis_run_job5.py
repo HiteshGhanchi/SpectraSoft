@@ -801,18 +801,32 @@ class Job5RunPage(QWidget):
             with open(path, 'w', newline='') as f:
                 writer = csv.writer(f)
 
-                # Header
-                headers = []
-                for i in range(self.table.columnCount()):
-                    headers.append(self.table.horizontalHeaderItem(i).text())
+                # ── Channel-oriented header ───────────────────────────────
+                # Col 0: "Channel No", Col 1: "Element", then burn columns
+                num_burns = len(self.results)
+                headers = ["Channel No", "Element", "AVE"]
+                for i in range(num_burns):
+                    headers.append(f"N={i + 1}")
                 writer.writerow(headers)
 
-                # Data
-                for row in range(self.table.rowCount()):
-                    row_data = []
-                    for col in range(self.table.columnCount()):
-                        item = self.table.item(row, col)
-                        row_data.append(item.text() if item else "")
+                # ── Data rows sorted by channel number ─────────────────────
+                # element_names is a list ordered by their position in Page 3,
+                # so index+1 is the channel number (1-based).
+                for ch_idx, elem in enumerate(self.element_names):
+                    ch_no = ch_idx + 1   # 1-based channel number
+
+                    # Collect per-burn values for this element
+                    values = [burn.get(elem, 0.0) for burn in self.results]
+
+                    # Average (only meaningful after End Analysis)
+                    avg_str = ""
+                    if getattr(self, "is_ended", False) and values:
+                        avg_str = f"{sum(values) / len(values):.3f}"
+
+                    row_data = [ch_no, elem, avg_str]
+                    for val in values:
+                        row_data.append(f"{val:.3f}")
+
                     writer.writerow(row_data)
 
             QMessageBox.information(self, "Exported",
