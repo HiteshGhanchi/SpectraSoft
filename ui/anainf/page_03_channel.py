@@ -29,8 +29,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QSignalBlocker
 
-from core.database import get_session
-from core.models import AnalyticalGroup, MasterElement
+from core.persistence.database import get_session
+from core.persistence.models import AnalyticalGroup, MasterElement
 
 
 MAX_ELEMENTS = 32

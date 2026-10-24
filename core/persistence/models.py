@@ -4,7 +4,7 @@ SpectraSoft — Database Models
 
 from sqlalchemy import Column, Integer, String, JSON, DateTime
 from sqlalchemy.sql import func
-from core.database import Base
+from core.persistence.database import Base
 
 
 class AnalyticalGroup(Base):

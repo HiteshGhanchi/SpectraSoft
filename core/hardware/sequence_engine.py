@@ -5,7 +5,7 @@ Executes the full burn sequence using UARTManager.
 
 import time
 from typing import Dict, List, Optional, Callable
-from core.uart_manager import UARTManager
+from core.hardware.uart_manager import UARTManager
 
 class SequenceEngine:
     """Executes the full spectroscopy sequence."""

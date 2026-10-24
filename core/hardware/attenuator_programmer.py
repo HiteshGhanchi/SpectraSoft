@@ -5,7 +5,7 @@ Programs attenuator values for all elements.
 
 import time
 from typing import Dict, List, Optional
-from core.uart_manager import UARTManager
+from core.hardware.uart_manager import UARTManager
 
 class AttenuatorProgrammer:
     """Programs attenuator values for all 45 elements."""

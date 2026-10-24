@@ -23,11 +23,11 @@ is not connected yet, causing MCU ADC readings to be 0.
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.uart_manager import UARTManager
-from core.sequence_engine import SequenceEngine
-from core.attenuator_programmer import AttenuatorProgrammer
-from core.database import get_session
-from core.models import AnalyticalGroup
+from core.hardware.uart_manager import UARTManager
+from core.hardware.sequence_engine import SequenceEngine
+from core.hardware.attenuator_programmer import AttenuatorProgrammer
+from core.persistence.database import get_session
+from core.persistence.models import AnalyticalGroup
 
 import pandas as pd
 import os

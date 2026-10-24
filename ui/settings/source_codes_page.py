@@ -12,8 +12,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from core.database import get_session
-from core.models import SourceCode
+from core.persistence.database import get_session
+from core.persistence.models import SourceCode
 
 NUM_ROWS = 16
 

@@ -51,8 +51,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from core.database import get_session
-from core.models import AnalyticalGroup, SourceCode
+from core.persistence.database import get_session
+from core.persistence.models import AnalyticalGroup, SourceCode
 
 
 def _load_source_options() -> list:

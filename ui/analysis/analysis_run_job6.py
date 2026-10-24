@@ -31,10 +31,10 @@ from PyQt6.QtCore import Qt, QTimer, QDate
 from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
-from core.analysis_worker import AnalysisWorker
-from core.correction_engine import CorrectionEngine
-from core.database import get_session
-from core.models import AnalyticalGroup
+from core.analysis.analysis_worker import AnalysisWorker
+from core.analysis.correction_engine import CorrectionEngine
+from core.persistence.database import get_session
+from core.persistence.models import AnalyticalGroup
 
 import csv
 

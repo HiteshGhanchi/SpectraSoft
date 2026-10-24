@@ -34,8 +34,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from core.database import get_session
-from core.models import MasterElement
+from core.persistence.database import get_session
+from core.persistence.models import MasterElement
 
 
 NUM_ROWS = 45  # ITG 1 to 45

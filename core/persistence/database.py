@@ -63,7 +63,7 @@ def init_db():
     """
     # print("[DB DEBUG] init_db() started.", flush=True)
 
-    from core import models  # imported here to avoid circular imports
+    from core.persistence import models  # imported here to register tables
 
     # print("[DB DEBUG] Models imported successfully.", flush=True)
     # print("[DB DEBUG] Creating tables if not exists...", flush=True)
