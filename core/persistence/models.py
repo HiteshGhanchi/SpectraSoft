@@ -192,6 +192,47 @@ class WorkingCurveCoefficient(Base):
     curve = relationship("WorkingCurve", back_populates="coefficients")
 
 
+class MatrixCorrection(Base):
+    """Versioned matrix correction for one target/interfering pair."""
+
+    __tablename__ = "matrix_corrections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(
+        Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True
+    )
+    target_element_key = Column(String(100), nullable=False)
+    interfering_element_key = Column(String(100), nullable=False)
+    correction_type = Column(String(1), nullable=False)
+    coefficient = Column(Float, nullable=False, default=0.0)
+    status = Column(String(20), nullable=False, default="inactive")
+    version_name = Column(String(120), nullable=False)
+    source_working_curve_id = Column(
+        Integer, ForeignKey("working_curves.id"), nullable=True, index=True
+    )
+    point_count = Column(Integer, nullable=False, default=0)
+    r2 = Column(Float)
+    rmse = Column(Float)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    retired_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint(
+            "correction_type IN ('L', 'D')",
+            name="ck_matrix_correction_type",
+        ),
+        Index(
+            "uq_matrix_correction_active_pair",
+            "analytical_group_id",
+            "target_element_key",
+            "interfering_element_key",
+            "correction_type",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+
 class InstrumentConfiguration(Base):
     """The installed emission-unit configuration for the whole instrument."""
 

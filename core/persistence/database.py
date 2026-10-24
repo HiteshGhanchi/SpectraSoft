@@ -74,12 +74,14 @@ def init_db():
     from core.persistence.reference_data import seed_reference_data
     from core.persistence.configuration import get_or_create_instrument_configuration
     from core.persistence.working_curve_repository import migrate_working_curve_json
+    from core.persistence.matrix_correction_repository import migrate_matrix_json
 
     session = SessionLocal()
     try:
         get_or_create_instrument_configuration(session)
         seed_reference_data(session)
         migrate_working_curve_json(session)
+        migrate_matrix_json(session)
     finally:
         session.close()
 

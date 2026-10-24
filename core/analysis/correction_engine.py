@@ -200,9 +200,9 @@ class CorrectionEngine:
         grouped = {}
 
         for row in corrections:
-            target = self._key(
-                row.get("target_name")
-                or row.get("target_element")
+            target = self._canonical_key(
+                row.get("target_element")
+                or row.get("target_name")
                 or ""
             )
 
@@ -213,7 +213,7 @@ class CorrectionEngine:
 
         # Apply corrections
         for elem_name, c0 in original.items():
-            target_key = self._key(elem_name)
+            target_key = self._canonical_key(elem_name)
 
             if target_key not in grouped:
                 corrected[elem_name] = c0
@@ -229,20 +229,16 @@ class CorrectionEngine:
                 corr_type = str(row.get("type", "")).strip().upper()
                 coeff = self._to_float(row.get("coeff", 0.0), 0.0)
 
-                interfering_key = self._key(
-                    row.get("interfering_name")
-                    or row.get("interfering_element")
+                interfering_key = self._canonical_key(
+                    row.get("interfering_element")
+                    or row.get("interfering_name")
                     or ""
                 )
 
                 if not interfering_key:
                     continue
 
-                interfering_value = self._get_value_case_insensitive(
-                    original,
-                    interfering_key,
-                    0.0
-                )
+                interfering_value = self._get_canonical_value(original, interfering_key)
 
                 if corr_type == "L":
                     l_sum += coeff * interfering_value
@@ -260,16 +256,54 @@ class CorrectionEngine:
 
     def _get_page6_corrections(self) -> list:
         page6 = self.group_data.get("page_06_matrix", {})
+        legacy = page6.get("corrections", []) if isinstance(page6, dict) else []
+        if not isinstance(legacy, list):
+            legacy = []
 
-        if not isinstance(page6, dict):
-            return []
+        normalized = self.group_data.get("page_06_active_corrections", [])
+        if not isinstance(normalized, list):
+            normalized = []
 
-        corrections = page6.get("corrections", [])
+        normalized_rows = []
+        normalized_keys = set()
+        for row in normalized:
+            if not isinstance(row, dict):
+                continue
+            target = row.get("target_element_key") or row.get("target_element")
+            interfering = row.get("interfering_element_key") or row.get("interfering_element")
+            correction_type = row.get("correction_type") or row.get("type")
+            key = (self._canonical_key(target), self._canonical_key(interfering), str(correction_type or "").strip().upper())
+            if not key[0] or not key[1] or key[2] not in {"L", "D"}:
+                continue
+            normalized_keys.add(key)
+            normalized_rows.append({
+                "target_name": key[0],
+                "interfering_name": key[1],
+                "type": key[2],
+                "coeff": row.get("coefficient", row.get("coeff", 0.0)),
+            })
 
-        if not isinstance(corrections, list):
-            return []
+        authoritative = self.group_data.get("page_06_authoritative_keys", [])
+        if not isinstance(authoritative, list):
+            authoritative = []
+        authoritative_keys = {
+            (self._key(row[0]), self._key(row[1]), str(row[2]).strip().upper())
+            for row in authoritative
+            if isinstance(row, (list, tuple)) and len(row) == 3
+        }
 
-        return corrections
+        merged = list(normalized_rows)
+        for row in legacy:
+            if not isinstance(row, dict):
+                continue
+            key = (
+                self._canonical_key(row.get("target_element") or row.get("target_name")),
+                self._canonical_key(row.get("interfering_element") or row.get("interfering_name")),
+                str(row.get("type", "")).strip().upper(),
+            )
+            if key not in normalized_keys and key not in authoritative_keys:
+                merged.append(row)
+        return merged
 
     # =========================================================================
     # Page 7: Master Curve Correction
@@ -569,6 +603,25 @@ class CorrectionEngine:
 
     def _key(self, value) -> str:
         return str(value or "").strip().upper()
+
+    def _canonical_key(self, value) -> str:
+        key = self._key(value)
+        channels = self.group_data.get("page_03_channel", [])
+        if isinstance(channels, list):
+            for entry in channels:
+                if not isinstance(entry, dict):
+                    continue
+                element = self._key(entry.get("ele"))
+                name = self._key(entry.get("name"))
+                if key and key in {element, name} and element:
+                    return element
+        return key
+
+    def _get_canonical_value(self, data: dict, lookup_key: str, default: float = 0.0) -> float:
+        for key, value in data.items():
+            if self._canonical_key(key) == lookup_key:
+                return self._to_float(value, default)
+        return default
 
     def _to_float(self, value, default: float = 0.0) -> float:
         try:

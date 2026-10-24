@@ -45,6 +45,11 @@ from PyQt6.QtCore import Qt
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.analysis.matrix_correction_service import (
+    build_matrix_pairs,
+    calculate_matrix_coefficient,
+)
+from core.persistence.matrix_correction_repository import create_matrix_candidate
 
 import csv
 
@@ -380,7 +385,7 @@ class MatrixCalculationPage(QWidget):
 
                     if display_name:
                         self.element_names.append(display_name)
-                        self.ar_lookup[display_name.upper()] = {
+                        self.ar_lookup[ele.upper() or display_name.upper()] = {
                             "ar_no": ar_no,
                             "name": display_name,
                             "element": ele or display_name,
@@ -394,8 +399,13 @@ class MatrixCalculationPage(QWidget):
         self.interf_combo.clear()
 
         for elem in self.element_names:
-            self.target_combo.addItem(elem, elem)
-            self.interf_combo.addItem(elem, elem)
+            info = next(
+                (value for value in self.ar_lookup.values() if value.get("name") == elem),
+                {},
+            )
+            element_key = info.get("element", elem)
+            self.target_combo.addItem(elem, element_key)
+            self.interf_combo.addItem(elem, element_key)
 
         if len(self.element_names) > 1:
             self.interf_combo.setCurrentIndex(1)
@@ -448,7 +458,15 @@ class MatrixCalculationPage(QWidget):
             self.points_label.setText("Points: 0")
             return
 
-        pairs = self._build_pairs(target, interfering)
+        try:
+            pairs = self._build_pairs(target, interfering)
+        except ValueError as error:
+            self._show_msg(
+                "Calculation Failed",
+                str(error),
+                QMessageBox.Icon.Warning,
+            )
+            return
 
         self.table.setRowCount(len(pairs))
 
@@ -477,97 +495,16 @@ class MatrixCalculationPage(QWidget):
         self.points_label.setText(f"Points: {len(pairs)}")
 
     def _build_pairs(self, target: str, interfering: str) -> list:
-        meas_data, chem_data, page5_data = self._load_group_data()
-
-        measurements = []
-        standards = []
-
-        if isinstance(meas_data, dict):
-            measurements = meas_data.get("measurements", [])
-            if not isinstance(measurements, list):
-                measurements = []
-
-        if isinstance(chem_data, dict):
-            standards = chem_data.get("standards", [])
-            if not isinstance(standards, list):
-                standards = []
-
-        page5_lookup = self._page5_coeff_lookup(page5_data)
-
-        target_coeff = page5_lookup.get(target.upper())
-
-        if not target_coeff:
-            return []
-
-        intensities_by_sample = {}
-        true_by_sample = {}
-        interfering_by_sample = {}
-
-        for entry in measurements:
-            sample = str(entry.get("sample", "")).strip().upper()
-            intensities = entry.get("intensities", {})
-
-            if not sample or not isinstance(intensities, dict):
-                continue
-
-            target_intensity = self._dict_get_case_insensitive(intensities, target)
-
-            if target_intensity is None:
-                continue
-
-            try:
-                intensities_by_sample[sample] = float(target_intensity)
-            except (TypeError, ValueError):
-                pass
-
-        for entry in standards:
-            sample = str(entry.get("sample", "")).strip().upper()
-            values = entry.get("values", {})
-
-            if not sample or not isinstance(values, dict):
-                continue
-
-            target_true = self._dict_get_case_insensitive(values, target)
-            interfering_true = self._dict_get_case_insensitive(values, interfering)
-
-            if target_true is not None:
-                try:
-                    true_by_sample[sample] = float(target_true)
-                except (TypeError, ValueError):
-                    pass
-
-            if interfering_true is not None:
-                try:
-                    interfering_by_sample[sample] = float(interfering_true)
-                except (TypeError, ValueError):
-                    pass
-
-        pairs = []
-
-        for sample in sorted(intensities_by_sample.keys()):
-            if sample not in true_by_sample:
-                continue
-
-            if sample not in interfering_by_sample:
-                continue
-
-            intensity = intensities_by_sample[sample]
-            c0 = self._apply_working_curve_for_element(intensity, target_coeff)
-
-            true_value = true_by_sample[sample]
-            interfering_value = interfering_by_sample[sample]
-
-            error = true_value - c0
-
-            pairs.append({
-                "sample": sample,
-                "c0": c0,
-                "true": true_value,
-                "interfering": interfering_value,
-                "error": error,
-            })
-
-        return pairs
+        session = get_session()
+        try:
+            return build_matrix_pairs(
+                session,
+                self.group_id,
+                target,
+                interfering,
+            )
+        finally:
+            session.close()
 
     def _dict_get_case_insensitive(self, data: dict, key: str):
         target = str(key).strip().upper()
@@ -636,7 +573,13 @@ class MatrixCalculationPage(QWidget):
             )
             return
 
-        pairs = self._build_pairs(target, interfering)
+        try:
+            pairs = self._build_pairs(target, interfering)
+        except ValueError as error:
+            self.table.setRowCount(0)
+            self.points_label.setText("Points: 0")
+            self.result_label.setText(str(error))
+            return
 
         if not pairs:
             self._show_msg(
@@ -648,7 +591,7 @@ class MatrixCalculationPage(QWidget):
             return
 
         try:
-            coeff = self._calculate_matrix_coeff(pairs, corr_type)
+            result = calculate_matrix_coefficient(pairs, corr_type)
         except Exception as e:
             self._show_msg(
                 "Calculation Failed",
@@ -661,42 +604,26 @@ class MatrixCalculationPage(QWidget):
             "target": target,
             "interfering": interfering,
             "type": corr_type,
-            "coeff": coeff,
-            "points": len(pairs),
+            "coeff": result["coefficient"],
+            "point_count": result["point_count"],
+            "r2": result["r2"],
+            "rmse": result["rmse"],
+            "working_curve_id": next(
+                (pair.get("working_curve_id") for pair in pairs if pair.get("working_curve_id")),
+                None,
+            ),
         }
 
         self.result_label.setText(
-            f"COEFF. = {coeff:.6f}     "
+            f"COEFF. = {result['coefficient']:.6f}     "
             f"Type = {corr_type}     "
             f"Target = {target}     "
             f"Interfering = {interfering}     "
-            f"Points = {len(pairs)}"
+            f"Points = {result['point_count']}     "
+            f"Working Curve ID = {self.current_result['working_curve_id'] or 'legacy'}     "
+            f"R² = {result['r2'] if result['r2'] is not None else '—'}     "
+            f"RMSE = {result['rmse']:.6f}"
         )
-
-    def _calculate_matrix_coeff(self, pairs: list, corr_type: str) -> float:
-        numerator = 0.0
-        denominator = 0.0
-
-        for pair in pairs:
-            c0 = pair["c0"]
-            cj = pair["interfering"]
-            error = pair["error"]
-
-            if corr_type == "L":
-                x = cj
-            else:
-                x = c0 * cj
-
-            numerator += x * error
-            denominator += x * x
-
-        if abs(denominator) < 1e-12:
-            raise ValueError(
-                "Cannot calculate coefficient because denominator is zero. "
-                "Check interfering element values."
-            )
-
-        return numerator / denominator
 
     def _on_file_to_page6(self):
         if not self.current_result:
@@ -707,10 +634,7 @@ class MatrixCalculationPage(QWidget):
 
         self._file_current_result_to_page6()
 
-        self._show_msg(
-            "Filed",
-            "Matrix coefficient filed into Page 6 successfully."
-        )
+        self._show_msg("Filed", "Matrix coefficient filed as an inactive Page 6 candidate.")
 
     def _file_current_result_to_page6(self):
         result = self.current_result
@@ -720,20 +644,6 @@ class MatrixCalculationPage(QWidget):
         corr_type = result["type"]
         coeff = result["coeff"]
 
-        target_info = self.ar_lookup.get(target.upper(), {})
-        interfering_info = self.ar_lookup.get(interfering.upper(), {})
-
-        record = {
-            "target_ar_no": target_info.get("ar_no", ""),
-            "target_element": target_info.get("element", target),
-            "target_name": target_info.get("name", target),
-            "type": corr_type,
-            "interfering_ar_no": interfering_info.get("ar_no", ""),
-            "interfering_element": interfering_info.get("element", interfering),
-            "interfering_name": interfering_info.get("name", interfering),
-            "coeff": float(coeff),
-        }
-
         session = get_session()
 
         try:
@@ -742,37 +652,22 @@ class MatrixCalculationPage(QWidget):
             if not group:
                 return
 
-            data = group.page_06_matrix or {}
+            create_matrix_candidate(
+                session,
+                self.group_id,
+                target,
+                interfering,
+                corr_type,
+                coeff,
+                source_working_curve_id=result.get("working_curve_id"),
+                point_count=result.get("point_count", 0),
+                fit_stats={"r2": result.get("r2"), "rmse": result.get("rmse")},
+            )
 
-            if not isinstance(data, dict):
-                data = {}
-
-            corrections = data.get("corrections", [])
-
-            if not isinstance(corrections, list):
-                corrections = []
-
-            existing_index = None
-
-            for idx, row in enumerate(corrections):
-                same_target = str(row.get("target_name", "")).strip().upper() == target.upper()
-                same_interf = str(row.get("interfering_name", "")).strip().upper() == interfering.upper()
-                same_type = str(row.get("type", "")).strip().upper() == corr_type
-
-                if same_target and same_interf and same_type:
-                    existing_index = idx
-                    break
-
-            if existing_index is not None:
-                corrections[existing_index] = record
-            else:
-                corrections.append(record)
-
-            group.page_06_matrix = {
-                "corrections": corrections
-            }
-
-            session.commit()
+            # The candidate remains inactive. Do not write it to legacy Page 6
+            # JSON because legacy consumers treat every stored row as active.
+            # Page 6 synchronizes the compatibility JSON when the candidate is
+            # explicitly activated.
 
         finally:
             session.close()

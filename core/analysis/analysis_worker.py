@@ -32,6 +32,10 @@ from core.hardware.attenuator_programmer import AttenuatorProgrammer
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
 from core.persistence.working_curve_repository import get_active_coefficients
+from core.persistence.matrix_correction_repository import (
+    get_active_matrix_correction_dicts,
+    get_authoritative_matrix_correction_keys,
+)
 
 import pandas as pd
 import os
@@ -248,6 +252,13 @@ class AnalysisWorker(QThread):
                 "page_02_attenuator": group.page_02_attenuator,
                 "page_03_channel": group.page_03_channel,
                 "page_05_active_coefficients": active_coefficients,
+                "page_06_matrix": group.page_06_matrix or {},
+                "page_06_active_corrections": get_active_matrix_correction_dicts(
+                    session, self.group_id
+                ),
+                "page_06_authoritative_keys": get_authoritative_matrix_correction_keys(
+                    session, self.group_id
+                ),
             }
 
         finally:

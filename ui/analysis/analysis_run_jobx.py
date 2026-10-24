@@ -36,6 +36,10 @@ from core.analysis.analysis_worker import AnalysisWorker
 from core.analysis.correction_engine import CorrectionEngine
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.matrix_correction_repository import (
+    get_active_matrix_correction_dicts,
+    get_authoritative_matrix_correction_keys,
+)
 
 import csv
 
@@ -370,9 +374,16 @@ class JobXRunPage(QWidget):
                 return {}
 
             return {
+                "page_03_channel": group.page_03_channel or {},
                 "page_04_drift": group.page_04_drift or {},
                 "page_05_wc": group.page_05_wc or {},
                 "page_06_matrix": group.page_06_matrix or {},
+                "page_06_active_corrections": get_active_matrix_correction_dicts(
+                    session, self.group_id
+                ),
+                "page_06_authoritative_keys": get_authoritative_matrix_correction_keys(
+                    session, self.group_id
+                ),
                 "page_07_master": group.page_07_master or {},
                 "page_08_display": group.page_08_display or {},
                 "page_09_purity": group.page_09_purity or {},

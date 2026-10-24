@@ -47,9 +47,17 @@ from PyQt6.QtWidgets import (
     QAbstractItemView
 )
 from PyQt6.QtCore import Qt
+import math
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.matrix_correction_repository import (
+    activate_matrix_correction,
+    get_active_matrix_corrections,
+    list_matrix_corrections,
+    retire_matrix_correction,
+    update_active_matrix_coefficient,
+)
 
 
 class CorrectionPage(QWidget):
@@ -81,6 +89,7 @@ class CorrectionPage(QWidget):
         self.group_name = group_name
 
         self._updating_table = False
+        self._selected_matrix_id = None
 
         # Page 3 lookup:
         # {
@@ -225,6 +234,35 @@ class CorrectionPage(QWidget):
         self.table.itemChanged.connect(self._on_item_changed)
 
         outer_layout.addWidget(self.table, stretch=1)
+
+        versions_title = QLabel("MATRIX CORRECTION VERSIONS")
+        versions_title.setStyleSheet("font:bold 9pt Arial;color:black;background:#d4d0c8;")
+        outer_layout.addWidget(versions_title)
+
+        self.version_table = QTableWidget()
+        self.version_table.setColumnCount(8)
+        self.version_table.setHorizontalHeaderLabels([
+            "Target", "D/L", "Interfering", "Coeff.",
+            "Status", "Version", "Curve ID", "Points / R² / RMSE",
+        ])
+        self.version_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.version_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.version_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.version_table.verticalHeader().setVisible(False)
+        self.version_table.itemSelectionChanged.connect(self._on_version_selected)
+        outer_layout.addWidget(self.version_table, stretch=1)
+
+        version_buttons = QHBoxLayout()
+        self.activate_button = QPushButton("Activate Selected Version")
+        self.activate_button.setStyleSheet(self._button_style())
+        self.activate_button.clicked.connect(self._on_activate_version)
+        version_buttons.addWidget(self.activate_button)
+        self.retire_button = QPushButton("Retire Selected Version")
+        self.retire_button.setStyleSheet(self._button_style())
+        self.retire_button.clicked.connect(self._on_retire_version)
+        version_buttons.addWidget(self.retire_button)
+        version_buttons.addStretch()
+        outer_layout.addLayout(version_buttons)
 
         # Control row
         ctrl_layout = QHBoxLayout()
@@ -497,6 +535,181 @@ class CorrectionPage(QWidget):
         if self.table.rowCount() == 0:
             self._add_row()
 
+        self._load_matrix_versions()
+
+    def _load_matrix_versions(self):
+        """Load normalized Page 6 candidates for version-management actions."""
+        session = get_session()
+        try:
+            rows = list_matrix_corrections(session, self.group_id)
+            self.matrix_versions = [
+                {
+                    "id": row.id,
+                    "target": row.target_element_key,
+                    "interfering": row.interfering_element_key,
+                    "type": row.correction_type,
+                    "coefficient": row.coefficient,
+                    "status": row.status,
+                    "version_name": row.version_name,
+                    "source_working_curve_id": row.source_working_curve_id,
+                    "point_count": row.point_count,
+                    "r2": row.r2,
+                    "rmse": row.rmse,
+                }
+                for row in rows
+            ]
+            if hasattr(self, "version_table"):
+                self.version_table.setRowCount(0)
+                for row in self.matrix_versions:
+                    row_index = self.version_table.rowCount()
+                    self.version_table.insertRow(row_index)
+                    values = [
+                        row["target"], row["type"], row["interfering"],
+                        f"{row['coefficient']:.6f}", row["status"],
+                        row["version_name"],
+                        str(row["source_working_curve_id"] or "—"),
+                        f"{row['point_count']} / {row['r2']:.4f} / {row['rmse']:.6f}"
+                        if row["r2"] is not None and row["rmse"] is not None
+                        else str(row["point_count"]),
+                    ]
+                    for column, value in enumerate(values):
+                        item = QTableWidgetItem(value)
+                        item.setData(Qt.ItemDataRole.UserRole, row["id"])
+                        self.version_table.setItem(row_index, column, item)
+            return self.matrix_versions
+        finally:
+            session.close()
+
+    def _activate_selected_matrix(self):
+        correction_id = getattr(self, "_selected_matrix_id", None)
+        if correction_id is None:
+            return None
+        session = get_session()
+        try:
+            row = activate_matrix_correction(session, correction_id)
+            self._sync_active_json(session)
+            self._reload_manual_table(session)
+            self._load_matrix_versions()
+            return row
+        finally:
+            session.close()
+
+    def _retire_selected_matrix(self):
+        correction_id = getattr(self, "_selected_matrix_id", None)
+        if correction_id is None:
+            return None
+        session = get_session()
+        try:
+            row = retire_matrix_correction(session, correction_id)
+            self._sync_active_json(session)
+            self._reload_manual_table(session)
+            self._load_matrix_versions()
+            return row
+        finally:
+            session.close()
+
+    def _on_version_selected(self):
+        selected = self.version_table.selectionModel().selectedRows()
+        self._selected_matrix_id = None
+        if selected:
+            item = self.version_table.item(selected[0].row(), 0)
+            if item is not None:
+                self._selected_matrix_id = item.data(Qt.ItemDataRole.UserRole)
+
+    def _on_activate_version(self):
+        try:
+            if self._activate_selected_matrix() is not None:
+                self._show_msg("Activated", "Matrix correction version activated.")
+        except ValueError as error:
+            self._show_msg("Activation Failed", str(error), QMessageBox.Icon.Warning)
+
+    def _on_retire_version(self):
+        try:
+            if self._selected_matrix_id is None:
+                return
+            if not self._show_question(
+                "Retire Matrix Version",
+                "Retire the selected matrix correction version?",
+            ):
+                return
+            if self._retire_selected_matrix() is not None:
+                self._show_msg("Retired", "Matrix correction version retired.")
+        except ValueError as error:
+            self._show_msg("Retirement Failed", str(error), QMessageBox.Icon.Warning)
+
+    def _sync_active_json(self, session):
+        """Keep legacy Page 6 JSON limited to active normalized corrections."""
+        group = session.get(AnalyticalGroup, self.group_id)
+        if group is None:
+            return
+        rows = get_active_matrix_corrections(session, self.group_id)
+        by_element = {
+            str(info.get("element", "")).strip().upper(): (ar_no, info)
+            for ar_no, info in self._ar_lookup.items()
+        }
+        existing_data = group.page_06_matrix if isinstance(group.page_06_matrix, dict) else {}
+        existing_rows = existing_data.get("corrections", [])
+        normalized_keys = {
+            (
+                row.target_element_key,
+                row.interfering_element_key,
+                row.correction_type,
+            )
+            for row in list_matrix_corrections(session, self.group_id)
+            if row.status in {"active", "retired"}
+        }
+        compatibility_rows = []
+        for legacy in existing_rows if isinstance(existing_rows, list) else []:
+            target = str(
+                legacy.get("target_element") or legacy.get("target_name") or ""
+            ).strip().upper()
+            interfering = str(
+                legacy.get("interfering_element")
+                or legacy.get("interfering_name")
+                or ""
+            ).strip().upper()
+            correction_type = str(legacy.get("type", "")).strip().upper()
+            if (target, interfering, correction_type) not in normalized_keys:
+                compatibility_rows.append(legacy)
+        group.page_06_matrix = {
+            "corrections": [
+                self._compatibility_row(row, by_element)
+                for row in rows
+            ] + compatibility_rows
+        }
+        session.commit()
+
+    def _compatibility_row(self, row, by_element: dict) -> dict:
+        target_ar, target_info = by_element.get(row.target_element_key, ("", {}))
+        interfering_ar, interfering_info = by_element.get(
+            row.interfering_element_key, ("", {})
+        )
+        return {
+            "target_ar_no": target_ar,
+            "target_element": row.target_element_key,
+            "target_name": target_info.get("name", row.target_element_key),
+            "type": row.correction_type,
+            "interfering_ar_no": interfering_ar,
+            "interfering_element": row.interfering_element_key,
+            "interfering_name": interfering_info.get(
+                "name", row.interfering_element_key
+            ),
+            "coeff": row.coefficient,
+        }
+
+    def _reload_manual_table(self, session):
+        group = session.get(AnalyticalGroup, self.group_id)
+        data = group.page_06_matrix if group else {}
+        rows = data.get("corrections", []) if isinstance(data, dict) else []
+        self._updating_table = True
+        self.table.setRowCount(0)
+        for row in rows if isinstance(rows, list) else []:
+            if isinstance(row, dict):
+                self._add_row(row)
+        if self.table.rowCount() == 0:
+            self._add_row()
+        self._updating_table = False
+
     def _collect(self) -> dict:
         corrections = []
 
@@ -583,6 +796,35 @@ class CorrectionPage(QWidget):
 
             if group:
                 group.page_06_matrix = data
+                active_rows = get_active_matrix_corrections(session, self.group_id)
+                desired_keys = set()
+                for correction in data["corrections"]:
+                    target_key = str(correction.get("target_element", "")).strip().upper()
+                    interfering_key = str(correction.get("interfering_element", "")).strip().upper()
+                    correction_type = str(correction.get("type", "")).strip().upper()
+                    key = (target_key, interfering_key, correction_type)
+                    desired_keys.add(key)
+                    for normalized in active_rows:
+                        normalized_key = (
+                            normalized.target_element_key,
+                            normalized.interfering_element_key,
+                            normalized.correction_type,
+                        )
+                        if normalized_key == key:
+                            update_active_matrix_coefficient(
+                                session, normalized.id, correction["coeff"]
+                            )
+                            break
+
+                for normalized in active_rows:
+                    normalized_key = (
+                        normalized.target_element_key,
+                        normalized.interfering_element_key,
+                        normalized.correction_type,
+                    )
+                    if normalized_key not in desired_keys:
+                        retire_matrix_correction(session, normalized.id)
+                self._sync_active_json(session)
                 session.commit()
 
         finally:
@@ -599,7 +841,10 @@ class CorrectionPage(QWidget):
             if value == "":
                 return default
 
-            return float(value)
+            result = float(value)
+            if not math.isfinite(result):
+                raise ValueError
+            return result
 
         except (TypeError, ValueError):
             raise ValueError(f"Invalid numeric coefficient: {text}")
