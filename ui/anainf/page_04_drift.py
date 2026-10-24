@@ -625,13 +625,10 @@ class DriftCorrectionPage(QWidget):
     def _on_pre(self):
         self._save()
 
-        try:
-            from ui.anainf.page_03_channel import ChannelPage
-            self.main_window.set_right_widget(
-                ChannelPage(self.main_window, self.group_id, self.group_name)
-            )
-        except ImportError:
-            pass
+        from ui.anainf.page_02_attenuator import AttenuatorPage
+        self.main_window.set_right_widget(
+            AttenuatorPage(self.main_window, self.group_id, self.group_name)
+        )
 
     def _on_print(self):
         self._show_msg("Print", "Print coming soon.")

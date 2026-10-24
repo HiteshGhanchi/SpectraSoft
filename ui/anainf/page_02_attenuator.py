@@ -37,6 +37,28 @@ from PyQt6.QtGui import QColor
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup, MasterElement
+from ui.anainf.page_03_channel import selected_itg_numbers
+
+
+def ordered_selected_elements(channel_data: list[dict], master_elements: list) -> list:
+    """Resolve selected ITGs to master elements in analytical order."""
+    by_itg = {}
+    for element in master_elements or []:
+        raw_itg = element.itg_no if hasattr(element, "itg_no") else element.get("itg_no")
+        try:
+            itg = int(raw_itg)
+        except (TypeError, ValueError):
+            continue
+        by_itg[itg] = element
+
+    resolved = []
+    seen = set()
+    for itg in selected_itg_numbers(channel_data):
+        if itg in seen or itg not in by_itg:
+            continue
+        seen.add(itg)
+        resolved.append(by_itg[itg])
+    return resolved
 
 
 class AttenuatorPage(QWidget):
@@ -116,6 +138,13 @@ class AttenuatorPage(QWidget):
             "}"
         )
         ml.addWidget(title)
+
+        self._selection_hint = QLabel()
+        self._selection_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._selection_hint.setStyleSheet(
+            "QLabel{color:#666666;font:9pt Arial;background:#d4d0c8;padding:3px;}"
+        )
+        ml.addWidget(self._selection_hint)
 
         # ── Tables Container ─────────────────────────────────────────────
         tables_container = QHBoxLayout()
@@ -392,19 +421,33 @@ class AttenuatorPage(QWidget):
             session.close()
 
     def _load(self):
-        """Reload both tables with current data."""
+        """Reload ATT rows for the active group's selected analytical channels."""
         session = get_session()
         try:
-            # Order by itg_no (primary key)
-            elements = session.query(MasterElement).order_by(MasterElement.itg_no).all()
+            group = session.get(AnalyticalGroup, self.group_id)
+            channel_data = (
+                group.page_03_channel
+                if group and isinstance(group.page_03_channel, list)
+                else []
+            )
+            master_elements = session.query(MasterElement).order_by(
+                MasterElement.itg_no
+            ).all()
+            elements = ordered_selected_elements(channel_data, master_elements)
 
             if not elements:
-                # No elements – show empty tables
+                self._selection_hint.setText(
+                    "No analytical channels selected. Return to Order of Analytical Channel & Internal Standard."
+                )
                 self._left_table.setRowCount(1)
                 self._right_table.setRowCount(1)
                 self._populate_table(self._left_table, [None])
                 self._populate_table(self._right_table, [None])
                 return
+
+            self._selection_hint.setText(
+                f"Showing ATT for {len(elements)} selected analytical channel(s)."
+            )
 
             half = (len(elements) + 1) // 2
             left_elements = elements[:half]
@@ -419,12 +462,11 @@ class AttenuatorPage(QWidget):
 
             # Save current ATT values (from DB)
             saved_values = {}
-            g = session.get(AnalyticalGroup, self.group_id)
-            if g and g.page_02_attenuator and g.page_02_attenuator.get("rows"):
-                for r in g.page_02_attenuator["rows"]:
+            if group and group.page_02_attenuator and group.page_02_attenuator.get("rows"):
+                for r in group.page_02_attenuator["rows"]:
                     itg = r.get("itg_no")
                     if itg is not None:
-                        saved_values[itg] = r.get("att_value", 0)
+                        saved_values[int(itg)] = r.get("att_value", 0)
                     else:
                         saved_values[(r["element"], r["wavelength"])] = r.get("att_value", 0)
 
@@ -612,9 +654,9 @@ class AttenuatorPage(QWidget):
 
         self._save()
 
-        from ui.anainf.page_03_channel import ChannelPage
+        from ui.anainf.page_04_drift import DriftCorrectionPage
         self.main_window.set_right_widget(
-            ChannelPage(self.main_window, self.group_id, self.group_name)
+            DriftCorrectionPage(self.main_window, self.group_id, self.group_name)
         )
 
 
@@ -624,9 +666,9 @@ class AttenuatorPage(QWidget):
 
         self._save()
 
-        from ui.anainf.page_01_source import SourceConditionPage
+        from ui.anainf.page_03_channel import ChannelPage
         self.main_window.set_right_widget(
-            SourceConditionPage(self.main_window, self.group_id, self.group_name)
+            ChannelPage(self.main_window, self.group_id, self.group_name)
         )
 
     def _on_print(self):
@@ -634,7 +676,7 @@ class AttenuatorPage(QWidget):
 
     def _on_cancel(self):
         if self._show_question("Cancel", "Discard changes?") == QMessageBox.StandardButton.Yes:
-            from ui.anainf.page_01_source import SourceConditionPage
+            from ui.anainf.page_03_channel import ChannelPage
             self.main_window.set_right_widget(
-                SourceConditionPage(self.main_window, self.group_id, self.group_name)
+                ChannelPage(self.main_window, self.group_id, self.group_name)
             )

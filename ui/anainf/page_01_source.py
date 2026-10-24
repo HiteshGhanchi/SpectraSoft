@@ -464,9 +464,9 @@ class SourceConditionPage(QWidget):
 
     def _on_next(self):
         self._save()
-        from ui.anainf.page_02_attenuator import AttenuatorPage
+        from ui.anainf.page_03_channel import ChannelPage
         self.main_window.set_right_widget(
-            AttenuatorPage(self.main_window, self.group_id, self.group_name)
+            ChannelPage(self.main_window, self.group_id, self.group_name)
         )
 
     def _on_pre(self):

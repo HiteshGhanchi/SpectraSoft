@@ -34,6 +34,56 @@ from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup, MasterElement
 
 
+def selected_itg_numbers(data: list[dict]) -> list[int]:
+    """Return valid selected ITG numbers in their saved analytical order."""
+    selected = []
+    for entry in data or []:
+        raw_itg = entry.get("itg") if isinstance(entry, dict) else None
+        try:
+            itg = int(raw_itg)
+        except (TypeError, ValueError):
+            continue
+        if itg > 0:
+            selected.append(itg)
+    return selected
+
+
+def validate_channel_data(data: list[dict]) -> tuple[bool, str]:
+    """Validate selected ITGs and their sequence assignments."""
+    selected_count = 0
+    used_itgs = set()
+
+    for index, entry in enumerate(data or []):
+        if not isinstance(entry, dict):
+            continue
+
+        raw_itg = entry.get("itg")
+        if raw_itg in (None, ""):
+            continue
+
+        try:
+            itg = int(raw_itg)
+        except (TypeError, ValueError):
+            return False, f"AR-No. {index + 1}: ITG must be a valid channel number."
+
+        if itg <= 0:
+            return False, f"AR-No. {index + 1}: ITG must be a valid channel number."
+
+        selected_count += 1
+        if itg in used_itgs:
+            return False, f"ITG {itg} is selected more than once."
+        used_itgs.add(itg)
+
+        seq = str(entry.get("seq", "")).strip()
+        if seq not in {"1", "2", "3"}:
+            return False, f"AR-No. {index + 1}: Please select SEQ 1, 2, or 3."
+
+    if selected_count == 0:
+        return False, "Select at least one analytical channel before continuing."
+
+    return True, ""
+
+
 class ChannelPage(QWidget):
 
     def __init__(self, main_window, group_id: int, group_name: str):
@@ -539,8 +589,13 @@ class ChannelPage(QWidget):
             #     flush=True
             # )
 
+            try:
+                itg_lookup = int(itg_val)
+            except (TypeError, ValueError):
+                itg_lookup = itg_val
+
             with QSignalBlocker(row["itg"]):
-                itg_index = row["itg"].findData(itg_val)
+                itg_index = row["itg"].findData(itg_lookup)
                 row["itg"].setCurrentIndex(itg_index if itg_index >= 0 else 0)
 
             if ele_val:
@@ -611,38 +666,21 @@ class ChannelPage(QWidget):
     # =========================================================================
 
     def _validate_rows(self) -> bool:
-        # print("[PAGE3 DEBUG] _validate_rows() started.", flush=True)
-
-        used_itgs = set()
-
-        for index, row in enumerate(self._rows):
-            itg = row["itg"].currentData()
-            seq = row["seq"].currentText().strip()
-
-            if not itg:
-                continue
-
-            itg_str = str(itg)
-
-            if itg_str in used_itgs:
-                self._show_msg(
-                    "Invalid Channel Mapping",
-                    f"ITG {itg_str} is selected more than once.",
-                    QMessageBox.Icon.Warning
-                )
-                return False
-
-            used_itgs.add(itg_str)
-
-            if seq not in ["1", "2", "3"]:
-                self._show_msg(
-                    "Invalid SEQ",
-                    f"AR-No. {index + 1}: Please select SEQ 1, 2, or 3.",
-                    QMessageBox.Icon.Warning
-                )
-                return False
-
-        # print("[PAGE3 DEBUG] _validate_rows() passed.", flush=True)
+        data = [
+            {
+                "itg": row["itg"].currentData(),
+                "seq": row["seq"].currentText().strip(),
+            }
+            for row in self._rows
+        ]
+        valid, message = validate_channel_data(data)
+        if not valid:
+            self._show_msg(
+                "Invalid Channel Mapping",
+                message,
+                QMessageBox.Icon.Warning,
+            )
+            return False
         return True
 
     # =========================================================================
@@ -692,20 +730,14 @@ class ChannelPage(QWidget):
 
         self._save_data()
 
-        try:
-            from ui.anainf.page_04_drift import DriftCorrectionPage
-            self.main_window.set_right_widget(
-                DriftCorrectionPage(
-                    self.main_window,
-                    self.group_id,
-                    self.group_name
-                )
+        from ui.anainf.page_02_attenuator import AttenuatorPage
+        self.main_window.set_right_widget(
+            AttenuatorPage(
+                self.main_window,
+                self.group_id,
+                self.group_name,
             )
-        except ImportError:
-            self._show_msg(
-                "Next Page",
-                "Page 4 (Drift Correction) is not built yet."
-            )
+        )
 
     def _on_pre(self):
         # print("[PAGE3 DEBUG] Previous clicked.", flush=True)
@@ -715,17 +747,14 @@ class ChannelPage(QWidget):
 
         self._save_data()
 
-        try:
-            from ui.anainf.page_02_attenuator import AttenuatorPage
-            self.main_window.set_right_widget(
-                AttenuatorPage(
-                    self.main_window,
-                    self.group_id,
-                    self.group_name
-                )
+        from ui.anainf.page_01_source import SourceConditionPage
+        self.main_window.set_right_widget(
+            SourceConditionPage(
+                self.main_window,
+                self.group_id,
+                self.group_name,
             )
-        except ImportError:
-            pass
+        )
 
     def _on_print(self):
         # print("[PAGE3 DEBUG] Print clicked.", flush=True)
