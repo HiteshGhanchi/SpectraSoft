@@ -21,6 +21,7 @@ class MainWindow(QMainWindow):
 
         self._current_action = None
         self._uart = None
+        self._active_right_widget = None
 
         self._build_menu()
         self._build_body()
@@ -78,6 +79,28 @@ class MainWindow(QMainWindow):
         self.action_source.setCheckable(True)
         self.action_source.triggered.connect(self._open_source_codes)
         source_m.addAction(self.action_source)
+
+        # ── Instrument Settings ──────────────────────────────────────────
+        settings_m = mb.addMenu("Settings")
+        self.action_instrument_configuration = QAction(
+            "Instrument Configuration", self
+        )
+        self.action_instrument_configuration.setCheckable(True)
+        self.action_instrument_configuration.triggered.connect(
+            self._open_instrument_configuration
+        )
+        settings_m.addAction(self.action_instrument_configuration)
+
+        # ── Attenuator Adjustment ─────────────────────────────────────────
+        adjustment_m = mb.addMenu("Attenuator Adjustment")
+        self.action_attenuator_adjustment = QAction(
+            "Attenuator Adjustment", self
+        )
+        self.action_attenuator_adjustment.setCheckable(True)
+        self.action_attenuator_adjustment.triggered.connect(
+            self._open_attenuator_adjustment
+        )
+        adjustment_m.addAction(self.action_attenuator_adjustment)
 
         # ── Analysis Menu ────────────────────────────────────────────────
         analysis_m = mb.addMenu("Analysis")
@@ -172,9 +195,12 @@ class MainWindow(QMainWindow):
         while self._right_layout.count():
             item = self._right_layout.takeAt(0)
             if item.widget():
+                if hasattr(item.widget(), "shutdown_for_navigation"):
+                    item.widget().shutdown_for_navigation()
                 item.widget().deleteLater()
 
         self._right_layout.addWidget(widget)
+        self._active_right_widget = widget
 
         if hasattr(widget, "wants_fullscreen") and callable(widget.wants_fullscreen):
             self.set_fullscreen_mode(widget.wants_fullscreen())
@@ -244,6 +270,23 @@ class MainWindow(QMainWindow):
         from ui.settings.source_codes_page import SourceCodesPage
         self._set_active_menu(self.action_source)
         self.set_right_widget(SourceCodesPage(self))
+
+    def _open_instrument_configuration(self):
+        from ui.settings.instrument_configuration_page import InstrumentConfigurationPage
+
+        self._set_active_menu(self.action_instrument_configuration)
+        self.set_right_widget(InstrumentConfigurationPage(self))
+
+    def _open_attenuator_adjustment(self):
+        gid, gname = self._get_current_group()
+        if gid is None:
+            self._warn_no_group()
+            return
+
+        from ui.adjustment.attenuator_adjustment_page import AttenuatorAdjustmentPage
+
+        self._set_active_menu(self.action_attenuator_adjustment)
+        self.set_right_widget(AttenuatorAdjustmentPage(self, gid, gname))
 
     def _open_master_elements(self):
         from ui.settings.master_elements_page import MasterElementsPage

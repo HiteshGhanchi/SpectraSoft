@@ -741,10 +741,6 @@ class ChannelPage(QWidget):
 
     def _on_pre(self):
         # print("[PAGE3 DEBUG] Previous clicked.", flush=True)
-
-        if not self._validate_rows():
-            return
-
         self._save_data()
 
         from ui.anainf.page_01_source import SourceConditionPage

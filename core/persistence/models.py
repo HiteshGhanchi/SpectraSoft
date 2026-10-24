@@ -2,7 +2,7 @@
 SpectraSoft — Database Models
 """
 
-from sqlalchemy import Column, Integer, String, JSON, DateTime
+from sqlalchemy import CheckConstraint, Column, Integer, String, JSON, DateTime
 from sqlalchemy.sql import func
 from import_data.constants import (
     ANALYTICAL_GROUP_NAME_MAX_LENGTH,
@@ -60,6 +60,29 @@ class AnalyticalGroup(Base):
             "name": self.name,
             "display_order": self.display_order,
         }
+
+
+class InstrumentConfiguration(Base):
+    """The installed emission-unit configuration for the whole instrument."""
+
+    __tablename__ = "instrument_configuration"
+
+    id = Column(Integer, primary_key=True)
+    emission_unit_type = Column(String(20), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_instrument_configuration_singleton"),
+        CheckConstraint(
+            "emission_unit_type IN ('HPSG_300', 'HVS')",
+            name="ck_instrument_configuration_emission_unit",
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<InstrumentConfiguration(id={self.id}, "
+            f"emission_unit_type='{self.emission_unit_type}')>"
+        )
 
 
 class SourceCode(Base):

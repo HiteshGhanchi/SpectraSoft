@@ -208,6 +208,38 @@ class AnalyticalInformationFlowTests(unittest.TestCase):
         condition_page.assert_called_once_with(main_window, 1, "TEST")
         self.assertIs(main_window.widget, condition_page.return_value)
 
+    def test_order_and_ise_previous_is_allowed_without_channel_selection(self):
+        from PyQt6.QtWidgets import QComboBox
+        from ui.anainf.page_03_channel import ChannelPage
+
+        class MainWindow:
+            def __init__(self):
+                self.widget = None
+
+            def set_right_widget(self, widget):
+                self.widget = widget
+
+        itg = QComboBox()
+        itg.addItem("", "")
+        seq = QComboBox()
+        seq.addItems(["", "1", "2", "3"])
+        main_window = MainWindow()
+        page = ChannelPage.__new__(ChannelPage)
+        page.main_window = main_window
+        page.group_id = 1
+        page.group_name = "TEST"
+        page._rows = [{"itg": itg, "seq": seq}]
+        page._save_data = unittest.mock.Mock()
+        page._show_msg = unittest.mock.Mock()
+
+        with patch("ui.anainf.page_01_source.SourceConditionPage") as condition_page:
+            page._on_pre()
+
+        condition_page.assert_called_once_with(main_window, 1, "TEST")
+        self.assertIs(main_window.widget, condition_page.return_value)
+        page._save_data.assert_called_once()
+        page._show_msg.assert_not_called()
+
 
     def test_att_next_opens_drift_correction_page(self):
         from ui.anainf.page_02_attenuator import AttenuatorPage

@@ -72,9 +72,11 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
     from core.persistence.reference_data import seed_reference_data
+    from core.persistence.configuration import get_or_create_instrument_configuration
 
     session = SessionLocal()
     try:
+        get_or_create_instrument_configuration(session)
         seed_reference_data(session)
     finally:
         session.close()

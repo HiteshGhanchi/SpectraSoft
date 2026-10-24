@@ -51,6 +51,10 @@ Application
 │
 ├── Attenuator Adjustment
 │   └── Operation that determines production ATT
+
+├── Settings
+│   └── Instrument Configuration
+│       └── Installed emission unit: HPSG-300 or HVS
 │
 ├── Regression Calculation
 │   └── Operations that calculate curves and coefficients
@@ -80,6 +84,7 @@ Application
 | Chapters 8–9 — analysis operations | `ui/analysis/`, `core/analysis/analysis_worker.py`, `core/hardware/sequence_engine.py` |
 | Chapter 10 — report-oriented output | Existing export/report actions in analysis pages; more report screens can be added under `ui/report/` |
 | Chapter 11 — maintenance and hardware support | `core/hardware/` and the maintenance pages as they are implemented |
+| Instrument configuration and ATT adjustment | `core/persistence/configuration.py`, `ui/settings/instrument_configuration_page.py`, `ui/adjustment/` |
 
 `Manual.md` is the source reference for instrument terminology, sequence
 timing, correction formulas, environmental requirements, and operator safety.

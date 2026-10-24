@@ -44,6 +44,24 @@ PERCENT_SCALE = 100.0
 PURITY_TOTAL_PERCENT = 100.0
 
 # ---------------------------------------------------------------------------
+# Installed emission-unit configuration and ATT adjustment guidance
+# ---------------------------------------------------------------------------
+EMISSION_UNIT_HPSG_300 = "HPSG_300"
+EMISSION_UNIT_HVS = "HVS"
+DEFAULT_EMISSION_UNIT_TYPE = EMISSION_UNIT_HPSG_300
+EMISSION_UNIT_TYPES = (EMISSION_UNIT_HPSG_300, EMISSION_UNIT_HVS)
+ATT_ADJUSTMENT_TARGET_MIN = 0.5
+ATT_ADJUSTMENT_TARGET_MAX = 0.6
+HPSG_300_ADJUSTMENT_SCALE = 2
+HPSG_300_ADJUSTMENT_GRADUATION_MIN = 6
+HPSG_300_ADJUSTMENT_GRADUATION_MAX = 7
+HPSG_300_ADJUSTMENT_INTEGRATION_MS = 4000
+HVS_ADJUSTMENT_SCALE = 5
+HVS_ADJUSTMENT_GRADUATION_MIN = 4
+HVS_ADJUSTMENT_GRADUATION_MAX = 5
+HVS_ADJUSTMENT_INTEGRATION_MS = 15000
+
+# ---------------------------------------------------------------------------
 # ATmega/CH340 connection settings
 # ---------------------------------------------------------------------------
 UART_BAUD_RATE = 115200
