@@ -174,7 +174,7 @@ The generic MCU protocol does not itself explain which Port A or Port B values m
 
 - select a physical ITG channel;
 - set ATT;
-- select Source A through F;
+- select a source code from `0x0` through `0xF`;
 - control argon;
 - start preburn;
 - start integration;
@@ -183,7 +183,10 @@ The generic MCU protocol does not itself explain which Port A or Port B values m
 
 Those mappings must come from verified existing code, wiring information, or real hardware tests. They must not be invented.
 
-The current Python scripts and MCU parser must also use the same number format. The MCU's `toInt()` parses decimal text, while strings such as `9D` or `C3` are hexadecimal-looking values. This protocol detail requires verification before hardware validation.
+The client sends output-port values as hexadecimal text in `O` commands, while
+`T,<milliseconds>` remains decimal. The MCU parser now uses hexadecimal
+parsing for `O` values and decimal parsing for `T` values. Physical Port A/B
+meaning still requires verification against wiring or real hardware.
 
 ---
 
@@ -214,7 +217,10 @@ The physical channel list is global instrument information. It is not yet an Ana
 
 ### Capacity
 
-The actual selectable channels come from the installed instrument configuration. If the current instrument has 40 configured ITG channels, those 40 are the available physical channels.
+The actual selectable channels come from the installed instrument configuration.
+The current application ships 45 configured ITG rows in
+`import_data/master_elements.json`, and the code uses
+`import_data/constants.py:ELEMENT_CHANNEL_COUNT` for the fixed capacity.
 
 ---
 
@@ -222,19 +228,24 @@ The actual selectable channels come from the installed instrument configuration.
 
 ### Purpose
 
-Register the available source definitions, such as Source A through Source F.
+Register the available hexadecimal source definitions from `0x0` through `0xF`.
 
 ### Stored information
 
 ```text
-Source identifier
+Source identifier / hexadecimal code 0x0 through 0xF
 Source name/meaning
-Verified hardware mapping, when available
 ```
 
 ### Meaning
 
 This page defines which source choices exist. It does not decide which Analytical Group uses a source.
+
+The source identifier is the hardware code. The row with decimal `11` is
+displayed as hexadecimal `B` and is sent as source code `0xB`; the editable
+name is only the operator-facing label. The 16 source rows are loaded from
+`import_data/source_codes.json`, stored in the SQLite `source_codes` table,
+and can be edited, imported, or exported from the Source Codes page.
 
 ---
 

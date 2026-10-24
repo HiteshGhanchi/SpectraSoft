@@ -134,6 +134,12 @@ source-code counts, attenuator limits, ADC limits, UART settings, protocol
 timings, and source-selection values. Change those values there rather than
 duplicating them inside UI, analysis, or hardware modules.
 
+The bundled `import_data/master_elements.json` and
+`import_data/source_codes.json` files are validated and used to initialize
+empty or blank placeholder tables at database startup. Existing nonblank
+configuration is preserved. The Settings pages continue to support editing,
+JSON import, and JSON export of both tables.
+
 ### 1. Core modules are grouped by responsibility
 
 The former flat `core/` directory mixed persistence, hardware communication,

@@ -59,7 +59,8 @@ def init_db():
 
     Called once at application startup.
     Safe to call multiple times.
-    It does not delete, overwrite, or reset existing data.
+    It does not overwrite configured data. Empty tables or blank placeholder
+    rows are initialized from the bundled import_data reference files.
     """
     # print("[DB DEBUG] init_db() started.", flush=True)
 
@@ -69,6 +70,14 @@ def init_db():
     # print("[DB DEBUG] Creating tables if not exists...", flush=True)
 
     Base.metadata.create_all(bind=engine)
+
+    from core.persistence.reference_data import seed_reference_data
+
+    session = SessionLocal()
+    try:
+        seed_reference_data(session)
+    finally:
+        session.close()
 
     # print("[DB DEBUG] init_db() completed. Tables are ready.", flush=True)
 

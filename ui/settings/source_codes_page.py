@@ -12,7 +12,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from import_data.constants import SOURCE_CODE_COUNT
+from import_data.constants import (
+    SOURCE_CODE_COUNT,
+    SOURCE_CODE_MAX,
+    SOURCE_CODE_MIN,
+)
 from core.persistence.database import get_session
 from core.persistence.models import SourceCode
 
@@ -183,9 +187,10 @@ class SourceCodesPage(QWidget):
             rows = session.query(SourceCode).order_by(
                 SourceCode.entry_no).all()
 
-            # Seed 16 empty rows if DB is empty
+            # The application startup seeds the shipped reference rows. Keep
+            # this fallback for a page opened against an older empty database.
             if not rows:
-                for i in range(SOURCE_CODE_COUNT):
+                for i in range(SOURCE_CODE_MIN, SOURCE_CODE_MAX + 1):
                     session.add(SourceCode(entry_no=i, name=""))
                 session.commit()
                 rows = session.query(SourceCode).order_by(
@@ -279,23 +284,48 @@ class SourceCodesPage(QWidget):
         if not path:
             return
         try:
-            with open(path, "r") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             rows = data.get("source_codes", [])
             if len(rows) != SOURCE_CODE_COUNT:
                 QMessageBox.warning(self, "Import Failed",
                     f"Expected {SOURCE_CODE_COUNT} rows, got {len(rows)}.")
                 return
+
+            seen = set()
+            for r in rows:
+                try:
+                    entry_no = int(r.get("entry_no"))
+                except (TypeError, ValueError):
+                    QMessageBox.warning(self, "Import Failed", "Invalid source-code entry number.")
+                    return
+
+                if entry_no < SOURCE_CODE_MIN or entry_no > SOURCE_CODE_MAX:
+                    QMessageBox.warning(
+                        self,
+                        "Import Failed",
+                        f"Source code must be between 0x{SOURCE_CODE_MIN:X} and 0x{SOURCE_CODE_MAX:X}.",
+                    )
+                    return
+                if entry_no in seen:
+                    QMessageBox.warning(self, "Import Failed", "Duplicate source-code entry number.")
+                    return
+                seen.add(entry_no)
+
+            if seen != set(range(SOURCE_CODE_MIN, SOURCE_CODE_MAX + 1)):
+                QMessageBox.warning(self, "Import Failed", "All source-code entries 0x0-0xF are required.")
+                return
+
             session = get_session()
             try:
                 for r in rows:
-                    sc = session.get(SourceCode, r["entry_no"])
+                    entry_no = int(r["entry_no"])
+                    name = str(r.get("name") or "").strip()
+                    sc = session.get(SourceCode, entry_no)
                     if sc:
-                        sc.name = r.get("name", "")
+                        sc.name = name
                     else:
-                        session.add(SourceCode(
-                            entry_no=r["entry_no"],
-                            name=r.get("name", "")))
+                        session.add(SourceCode(entry_no=entry_no, name=name))
                 session.commit()
             finally:
                 session.close()

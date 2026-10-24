@@ -344,7 +344,7 @@ class MasterElementsPage(QWidget):
             # Clear all existing entries
             session.query(MasterElement).delete()
 
-            # Insert all 45 rows
+            # Insert the configured number of channel rows.
             for r in rows:
                 session.add(MasterElement(
                     itg_no=r["itg_no"],
