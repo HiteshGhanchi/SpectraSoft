@@ -32,7 +32,8 @@ Sequence:
     - Send O,A,C3  (HV on)
 
 Results stored in profile_data.csv with columns: [timestamp, element, att_value, adc_value]
-All commands/responses logged to profile.log
+All commands/responses logged to profile.log. The task receives a
+``CommandTransport`` so it can be reused with a non-UART command transport.
 
 The task supports external control:
   - shared_state["stop_event"]:     Set to stop the task early
@@ -46,6 +47,14 @@ import os
 import queue
 import threading
 from datetime import datetime
+
+from import_data.constants import (
+    ATTENUATOR_COMMAND_OFFSET,
+    ATTENUATOR_MAX_VALUE,
+    ATTENUATOR_MIN_VALUE,
+    ELEMENT_CHANNEL_COUNT,
+)
+from core.hardware.interfaces.transport import CommandTransport
 
 # ============================================================================
 # CONSTANTS
@@ -69,11 +78,6 @@ ADC_SETTLE_DELAY    = 1     # 100 ms after 3C
 READ_TIMEOUT        = 5.0       # Max seconds to wait for D,<value>
 
 ACK_TIMEOUT         = 1.0       # Max seconds to wait for K ACK
-ATT_OFFSET          = 0x40      # att_value 0 -> 0x40, att_value 63 -> 0x7F
-
-TOTAL_ELEMENTS      = 45        # ele1 ... ele45 → indices 0x00 ... 0x2C
-
-
 # ============================================================================
 # LOGGING
 # ============================================================================
@@ -92,14 +96,13 @@ def _log(log_fh, direction, message):
 # LOW-LEVEL HELPERS
 # ============================================================================
 
-def _send_command(conn, cmd, log_fh):
-    """Transmit a command string followed by CR+LF and flush immediately."""
+def _send_command(transport: CommandTransport, cmd, log_fh):
+    """Transmit a command through the selected command transport."""
     _log(log_fh, "TX", cmd)
-    conn.write((cmd + "\r\n").encode("utf-8"))
-    conn.flush()
+    return transport.write_line(cmd)
 
 
-def _wait_for_ack(conn, log_fh, timeout=ACK_TIMEOUT):
+def _wait_for_ack(transport: CommandTransport, log_fh, timeout=ACK_TIMEOUT):
     """
     Wait for 'K' ACK from uC.
     Lines starting with '#' are treated as debug output.
@@ -109,22 +112,22 @@ def _wait_for_ack(conn, log_fh, timeout=ACK_TIMEOUT):
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if conn.in_waiting > 0:
-            line = conn.readline().decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            _log(log_fh, "RX", line)
-            if line.startswith("#"):
-                continue
-            if line == "K":
-                return True
-            return False
-        time.sleep(0.001)
+        line = transport.read_line(timeout=max(0.001, deadline - time.time()))
+        if line is None:
+            break
+        if not line:
+            continue
+        _log(log_fh, "RX", line)
+        if line.startswith("#"):
+            continue
+        if line == "K":
+            return True
+        return False
     _log(log_fh, "RX", "TIMEOUT -- no ACK received")
     return False
 
 
-def _wait_for_data(conn, log_fh, timeout=READ_TIMEOUT):
+def _wait_for_data(transport: CommandTransport, log_fh, timeout=READ_TIMEOUT):
     """
     Wait for a 'D,<value>' response from uC.
     Ignores ACK ('K') and debug lines (starting with '#'), which may precede or interleave the data.
@@ -134,26 +137,26 @@ def _wait_for_data(conn, log_fh, timeout=READ_TIMEOUT):
     """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if conn.in_waiting > 0:
-            line = conn.readline().decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-            _log(log_fh, "RX", line)
-            if line.startswith("#"):
-                continue
-            if line == "K":
-                # ACK may be sent after I command; skip and continue waiting for data
-                continue
-            if line.startswith("D,"):
-                try:
-                    value = int(line.split(",")[1].strip())
-                    return value
-                except (IndexError, ValueError) as e:
-                    _log(log_fh, "RX", f"Parse error: {e}")
-                    return None
-            _log(log_fh, "RX", f"Unexpected response (expected D,<value>): {line}")
-            return None
-        time.sleep(0.001)
+        line = transport.read_line(timeout=max(0.001, deadline - time.time()))
+        if line is None:
+            break
+        if not line:
+            continue
+        _log(log_fh, "RX", line)
+        if line.startswith("#"):
+            continue
+        if line == "K":
+            # ACK may be sent after I command; skip and continue waiting for data
+            continue
+        if line.startswith("D,"):
+            try:
+                value = int(line.split(",", 1)[1].strip())
+                return value
+            except (IndexError, ValueError) as e:
+                _log(log_fh, "RX", f"Parse error: {e}")
+                return None
+        _log(log_fh, "RX", f"Unexpected response (expected D,<value>): {line}")
+        return None
     _log(log_fh, "RX", "TIMEOUT -- no D,<value> received within 5 s")
     return None
 
@@ -174,12 +177,12 @@ def _init_csv(csv_file=CSV_FILE):
 # CORE TASK
 # ============================================================================
 
-def run_profile(conn, element_idx, att_value, shared_state=None):
+def run_profile(transport: CommandTransport, element_idx, att_value, shared_state=None):
     """
     Execute profile task on selected element for 70 seconds with continuous ADC reads.
 
     Args:
-        conn:         Open serial.Serial connection
+        transport:    Open command transport
         element_idx:  Element index 0-44 (ele1=0, ele45=44)
         att_value:    Attenuator value 0-63
         shared_state: Optional dict with:
@@ -202,16 +205,16 @@ def run_profile(conn, element_idx, att_value, shared_state=None):
     data_list = shared_state.get("data_list", [])
 
     # Validate inputs
-    if not (0 <= element_idx <= TOTAL_ELEMENTS - 1):
-        print(f"  ✗ Invalid element index {element_idx}. Must be 0-{TOTAL_ELEMENTS - 1}.")
+    if not (0 <= element_idx < ELEMENT_CHANNEL_COUNT):
+        print(f"  ✗ Invalid element index {element_idx}. Must be 0-{ELEMENT_CHANNEL_COUNT - 1}.")
         return 0
-    if not (0 <= att_value <= 63):
-        print(f"  ✗ Invalid att_value {att_value}. Must be 0-63.")
+    if not ATTENUATOR_MIN_VALUE <= att_value <= ATTENUATOR_MAX_VALUE:
+        print(f"  ✗ Invalid att_value {att_value}. Must be {ATTENUATOR_MIN_VALUE}-{ATTENUATOR_MAX_VALUE}.")
         return 0
 
     element_name = f"ele{element_idx + 1}"
     element_hex = f"{element_idx:02X}"
-    att_cmd_val = att_value + ATT_OFFSET
+    att_cmd_val = att_value + ATTENUATOR_COMMAND_OFFSET
     att_hex = f"{att_cmd_val:02X}"
     current_att = att_value
 
@@ -236,23 +239,23 @@ def run_profile(conn, element_idx, att_value, shared_state=None):
             log_fh.flush()
 
             # Reset
-            _send_command(conn, "O,A,9D", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,9D", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(0.050)
 
             # HV on
-            _send_command(conn, "O,A,C3", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,C3", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(INIT_DELAY)
 
             # Select element
-            _send_command(conn, f"O,A,{element_hex}", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, f"O,A,{element_hex}", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(0.100)
 
             # Set ATT
-            _send_command(conn, f"O,A,{att_hex}", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, f"O,A,{att_hex}", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(0.100)
 
             print(f"  ✓ Initialization complete")
@@ -262,15 +265,15 @@ def run_profile(conn, element_idx, att_value, shared_state=None):
             log_fh.write("[Step 2] Argon flush + prespark\n")
             log_fh.flush()
 
-            _send_command(conn, "O,A,CB", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,CB", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(ARGON_DELAY)
 
-            _send_command(conn, "O,A,C9", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,C9", log_fh)
+            _wait_for_ack(transport, log_fh)
 
-            _send_command(conn, "O,A,85", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,85", log_fh)
+            _wait_for_ack(transport, log_fh)
 
             print(f"  ✓ Argon flush + prespark complete")
 
@@ -293,28 +296,28 @@ def run_profile(conn, element_idx, att_value, shared_state=None):
                 # Check for ATT value change from queue
                 try:
                     new_att = att_queue.get_nowait()
-                    if 0 <= new_att <= 63:
+                    if ATTENUATOR_MIN_VALUE <= new_att <= ATTENUATOR_MAX_VALUE:
                         current_att = new_att
-                        att_cmd_val = current_att + ATT_OFFSET
+                        att_cmd_val = current_att + ATTENUATOR_COMMAND_OFFSET
                         att_hex = f"{att_cmd_val:02X}"
-                        _send_command(conn, f"O,A,{att_hex}", log_fh)
-                        _wait_for_ack(conn, log_fh)
+                        _send_command(transport, f"O,A,{att_hex}", log_fh)
+                        _wait_for_ack(transport, log_fh)
                         print(f"  ! ATT value changed to {current_att}")
                 except queue.Empty:
                     pass
 
                 # ADC read sequence
-                _send_command(conn, "O,A,7C", log_fh)
-                _wait_for_ack(conn, log_fh)
+                _send_command(transport, "O,A,7C", log_fh)
+                _wait_for_ack(transport, log_fh)
                 time.sleep(ADC_INTER_DELAY)
 
-                _send_command(conn, "O,A,3C", log_fh)
-                _wait_for_ack(conn, log_fh)
+                _send_command(transport, "O,A,3C", log_fh)
+                _wait_for_ack(transport, log_fh)
                 time.sleep(ADC_SETTLE_DELAY)
 
                 # Request read
-                _send_command(conn, "I", log_fh)
-                value = _wait_for_data(conn, log_fh, timeout=READ_TIMEOUT)
+                _send_command(transport, "I", log_fh)
+                value = _wait_for_data(transport, log_fh, timeout=READ_TIMEOUT)
 
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
@@ -350,12 +353,12 @@ def run_profile(conn, element_idx, att_value, shared_state=None):
             log_fh.write("[Step 4] Shutdown\n")
             log_fh.flush()
 
-            _send_command(conn, "O,A,9D", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,9D", log_fh)
+            _wait_for_ack(transport, log_fh)
             time.sleep(0.050)
 
-            _send_command(conn, "O,A,C3", log_fh)
-            _wait_for_ack(conn, log_fh)
+            _send_command(transport, "O,A,C3", log_fh)
+            _wait_for_ack(transport, log_fh)
 
             print(f"  ✓ Shutdown complete")
 

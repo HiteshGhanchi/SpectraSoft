@@ -5,7 +5,7 @@
  * Baud   : 115200
  *
  * Command protocol (received from Python):
- *   O,<port>,<value>\n   — set output port  (port = A or B)
+ *   O,<port>,<value>\n   — set output port  (port = A or B, value = hexadecimal)
  *   I\n                  — read 12-bit ADC value from INPUT_PINS
  *   T,<ms>\n             — non-blocking delay of <ms> milliseconds
  *
@@ -158,7 +158,16 @@ void processCommand(String cmd) {
     }
 
     char    port = toupper(cmd.charAt(firstComma + 1));
-    uint8_t val  = (uint8_t)cmd.substring(secondComma + 1).toInt();
+    String  valueText = cmd.substring(secondComma + 1);
+    char*   endPtr = nullptr;
+    unsigned long parsedValue = strtoul(valueText.c_str(), &endPtr, 16);
+
+    if (*valueText.c_str() == '\0' || *endPtr != '\0' || parsedValue > 0xFF) {
+      Serial.println("# ERROR: Invalid hexadecimal output value");
+      return;
+    }
+
+    uint8_t val = (uint8_t)parsedValue;
 
     if (port == 'A') {
       writePortA(val);

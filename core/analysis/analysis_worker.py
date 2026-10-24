@@ -23,7 +23,10 @@ is not connected yet, causing MCU ADC readings to be 0.
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.hardware.uart_manager import UARTManager
+from typing import Callable, Optional
+
+from core.hardware.factory import create_spectrometer_controller
+from core.hardware.interfaces.spectrometer import SpectrometerController
 from core.hardware.sequence_engine import SequenceEngine
 from core.hardware.attenuator_programmer import AttenuatorProgrammer
 from core.persistence.database import get_session
@@ -31,6 +34,12 @@ from core.persistence.models import AnalyticalGroup
 
 import pandas as pd
 import os
+
+from import_data.constants import (
+    ADC_MAX_VALUE,
+    ADC_OVERFLOW_RATIO,
+    PERCENT_SCALE,
+)
 
 
 # ============================================================================
@@ -65,7 +74,12 @@ class AnalysisWorker(QThread):
     error = pyqtSignal(str)
     finished = pyqtSignal()
 
-    def __init__(self, group_id: int, params: dict = None):
+    def __init__(
+        self,
+        group_id: int,
+        params: dict = None,
+        controller_factory: Optional[Callable[[], SpectrometerController]] = None,
+    ):
         super().__init__()
 
         self.group_id = group_id
@@ -73,6 +87,7 @@ class AnalysisWorker(QThread):
 
         self._abort = False
         self._group_data = None
+        self._controller_factory = controller_factory or create_spectrometer_controller
 
     def stop(self):
         """Request to abort the running analysis."""
@@ -94,6 +109,8 @@ class AnalysisWorker(QThread):
         5. If simulation enabled, replace ADC/intensity data from CSV
         6. Emit result to Job5RunPage
         """
+        controller: Optional[SpectrometerController] = None
+
         try:
             # ── Step 1: Load group data ─────────────────────────────────
             self.progress.emit("Loading group data...", 5)
@@ -111,15 +128,15 @@ class AnalysisWorker(QThread):
             # ── Step 2: Connect to hardware lazily ──────────────────────
             self.progress.emit("Connecting to hardware...", 10)
 
-            uart = UARTManager()
+            controller = self._controller_factory()
 
             # Important:
             # This connects only when Start is pressed.
-            # If already connected, UARTManager.connect() reuses the open port.
-            if not uart.connect():
+            # The selected controller owns the transport-specific connection.
+            if not controller.connect():
                 self.error.emit(
                     "Failed to connect to hardware.\n"
-                    "Check that the CH340 adapter is plugged in and the MCU is powered."
+                    "Check that the selected hardware adapter is connected and powered."
                 )
                 return
 
@@ -132,7 +149,7 @@ class AnalysisWorker(QThread):
 
             att_rows = self._group_data.get("page_02_attenuator", {}).get("rows", [])
 
-            programmer = AttenuatorProgrammer(uart)
+            programmer = AttenuatorProgrammer(controller)
             prog_count = programmer.program_all(att_rows)
 
             print(f"[JOB5] Programmed {prog_count} attenuators", flush=True)
@@ -144,7 +161,7 @@ class AnalysisWorker(QThread):
             # ── Step 4: Execute real MCU burn sequence ──────────────────
             self.progress.emit("Running burn sequence...", 20)
 
-            sequence = SequenceEngine(uart)
+            sequence = SequenceEngine(controller)
 
             raw_adc_from_mcu = sequence.execute_full_sequence(
                 page1_data=self._group_data.get("page_01_source", {}),
@@ -197,6 +214,8 @@ class AnalysisWorker(QThread):
             self.error.emit(str(e))
 
         finally:
+            if controller is not None:
+                controller.close()
             self.finished.emit()
 
     # =========================================================================
@@ -374,7 +393,7 @@ class AnalysisWorker(QThread):
             Treat as normalized intensity and convert to ADC counts.
 
         If value is greater than 1.0:
-            Treat as already ADC-like and clamp to 0-4095.
+            Treat as already ADC-like and clamp to the configured ADC maximum.
 
         This is mainly for reporting/debugging while CSV simulation is enabled.
         """
@@ -387,11 +406,11 @@ class AnalysisWorker(QThread):
                 v = 0.0
 
             if 0.0 <= v <= 1.0:
-                adc = int(round(v * 4095))
+                adc = int(round(v * ADC_MAX_VALUE))
             else:
                 adc = int(round(v))
 
-            adc = max(0, min(4095, adc))
+            adc = max(0, min(ADC_MAX_VALUE, adc))
             raw_adc[name] = adc
 
         return raw_adc
@@ -421,7 +440,7 @@ class AnalysisWorker(QThread):
 
         Modes:
         1. ISE = 0:
-            normalized intensity = ADC / 4095
+            normalized intensity = ADC / configured ADC maximum
 
         2. ISE > 0:
             relative intensity = element ADC / reference ADC * 100
@@ -470,14 +489,14 @@ class AnalysisWorker(QThread):
                         ref_adc = 0.0
 
                     if ref_adc > 0:
-                        results[key] = (adc_value / ref_adc) * 100.0
+                        results[key] = (adc_value / ref_adc) * PERCENT_SCALE
                     else:
                         results[key] = 0.0
                 else:
-                    results[key] = adc_value / 4095.0
+                    results[key] = adc_value / ADC_MAX_VALUE
 
             else:
-                results[key] = adc_value / 4095.0
+                results[key] = adc_value / ADC_MAX_VALUE
 
         return results
 
@@ -489,10 +508,10 @@ class AnalysisWorker(QThread):
         """
         Check overflow using raw ADC.
 
-        0.8 of 4095 is the functional overflow threshold.
+        The configured overflow ratio is applied to the ADC maximum.
         """
         overflows = []
-        overflow_limit = int(0.8 * 4095)
+        overflow_limit = int(ADC_OVERFLOW_RATIO * ADC_MAX_VALUE)
 
         for name, value in raw_adc.items():
             try:
@@ -519,7 +538,7 @@ class AnalysisWorker(QThread):
             except (TypeError, ValueError):
                 v = 0.0
 
-            if v > 0.8:
+            if v > ADC_OVERFLOW_RATIO:
                 overflows.append(name)
 
         return overflows

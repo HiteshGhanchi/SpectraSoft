@@ -2,7 +2,7 @@
 Task 5 - Profile GUI
 ====================
 Simple GUI for task5_profile that:
-  - Allows selection of element (1-45)
+  - Allows selection of a configured element channel
   - Allows input of ATT value (0-63)
   - Displays live ADC data as it comes in
   - Allows changing ATT value during execution
@@ -12,6 +12,7 @@ The GUI communicates with the task via shared_state:
   - shared_state["stop_event"]: Set to stop the task
   - shared_state["att_queue"]: Queue to send new ATT values
   - shared_state["data_list"]: List of readings to display
+  - shared_state["transport"]: Optional already-open CommandTransport
 """
 
 import tkinter as tk
@@ -21,7 +22,11 @@ import threading
 from datetime import datetime
 import json
 
-TOTAL_ELEMENTS = 45
+from import_data.constants import (
+    ATTENUATOR_MAX_VALUE,
+    ATTENUATOR_MIN_VALUE,
+    ELEMENT_CHANNEL_COUNT,
+)
 
 
 class ProfileGUI:
@@ -66,14 +71,14 @@ class ProfileGUI:
         elem_sub = tk.Frame(control_frame, bg="white")
         elem_sub.pack(fill=tk.X, pady=8)
 
-        tk.Label(elem_sub, text="Element (1-45):", bg="white", font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
-        self.elem_spinbox = tk.Spinbox(elem_sub, from_=1, to=TOTAL_ELEMENTS,
+        tk.Label(elem_sub, text=f"Element (1-{ELEMENT_CHANNEL_COUNT}):", bg="white", font=("Arial", 10)).pack(side=tk.LEFT, padx=5)
+        self.elem_spinbox = tk.Spinbox(elem_sub, from_=1, to=ELEMENT_CHANNEL_COUNT,
                                        textvariable=self.element_var, width=6,
                                        font=("Arial", 10), state="normal")
         self.elem_spinbox.pack(side=tk.LEFT, padx=5)
 
-        tk.Label(elem_sub, text="ATT Value (0-63):", bg="white", font=("Arial", 10)).pack(side=tk.LEFT, padx=20)
-        self.att_spinbox = tk.Spinbox(elem_sub, from_=0, to=63,
+        tk.Label(elem_sub, text=f"ATT Value ({ATTENUATOR_MIN_VALUE}-{ATTENUATOR_MAX_VALUE}):", bg="white", font=("Arial", 10)).pack(side=tk.LEFT, padx=20)
+        self.att_spinbox = tk.Spinbox(elem_sub, from_=ATTENUATOR_MIN_VALUE, to=ATTENUATOR_MAX_VALUE,
                                       textvariable=self.att_var, width=6,
                                       font=("Arial", 10), state="normal")
         self.att_spinbox.pack(side=tk.LEFT, padx=5)
@@ -157,11 +162,11 @@ class ProfileGUI:
             element = int(self.element_var.get())
             att = int(self.att_var.get())
 
-            if not (1 <= element <= TOTAL_ELEMENTS):
-                messagebox.showerror("Invalid Input", f"Element must be 1-{TOTAL_ELEMENTS}")
+            if not (1 <= element <= ELEMENT_CHANNEL_COUNT):
+                messagebox.showerror("Invalid Input", f"Element must be 1-{ELEMENT_CHANNEL_COUNT}")
                 return
-            if not (0 <= att <= 63):
-                messagebox.showerror("Invalid Input", "ATT value must be 0-63")
+            if not ATTENUATOR_MIN_VALUE <= att <= ATTENUATOR_MAX_VALUE:
+                messagebox.showerror("Invalid Input", f"ATT value must be {ATTENUATOR_MIN_VALUE}-{ATTENUATOR_MAX_VALUE}")
                 return
 
             # Disable controls
@@ -185,23 +190,23 @@ class ProfileGUI:
                 try:
                     from tools.profile.profile_task import run_profile
 
-                    # Use a shared connection when provided; otherwise open the
-                    # same CH340 connection used by the main application.
-                    conn = self.shared_state.get("conn")
-                    uart = None
-                    if conn is None:
-                        from core.hardware.uart_manager import UARTManager
+                    # Use a shared transport when provided; otherwise create
+                    # the configured transport through the hardware factory.
+                    transport = self.shared_state.get("transport")
+                    owns_transport = False
+                    if transport is None:
+                        from core.hardware.factory import create_command_transport
 
-                        uart = UARTManager()
-                        if not uart.connect() or uart.conn is None:
+                        transport = create_command_transport()
+                        owns_transport = True
+                        if not transport.connect():
                             raise RuntimeError("Unable to connect to the profiling hardware.")
-                        conn = uart.conn
 
                     try:
-                        run_profile(conn, element - 1, att, self.shared_state)
+                        run_profile(transport, element - 1, att, self.shared_state)
                     finally:
-                        if uart is not None:
-                            uart.close()
+                        if owns_transport:
+                            transport.close()
 
                     # Task completed
                     self.root.after(100, self._task_completed)
@@ -225,8 +230,8 @@ class ProfileGUI:
         """Send a new ATT value to the running task."""
         try:
             new_att = int(self.att_var.get())
-            if not (0 <= new_att <= 63):
-                messagebox.showerror("Invalid Input", "ATT value must be 0-63")
+            if not ATTENUATOR_MIN_VALUE <= new_att <= ATTENUATOR_MAX_VALUE:
+                messagebox.showerror("Invalid Input", f"ATT value must be {ATTENUATOR_MIN_VALUE}-{ATTENUATOR_MAX_VALUE}")
                 return
 
             self.shared_state["att_queue"].put(new_att)

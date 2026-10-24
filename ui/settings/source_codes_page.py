@@ -1,6 +1,6 @@
 """
 SpectraSoft — Source Codes Settings Page
-16 fixed rows (0-F). Name column editable.
+Fixed hexadecimal source-code rows (0-F). Name column editable.
 """
 
 import json
@@ -12,11 +12,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
+from import_data.constants import SOURCE_CODE_COUNT
 from core.persistence.database import get_session
 from core.persistence.models import SourceCode
-
-NUM_ROWS = 16
-
 
 class SourceCodesPage(QWidget):
 
@@ -73,7 +71,7 @@ class SourceCodesPage(QWidget):
         ml.setSpacing(8)
 
         # ── Excel-Style Table ───────────────────────────────────────────
-        # Height = 16 rows × 27px + header (27px) = 459px
+        # Height is based on the configured source-code row count.
         table_frame = QFrame()
         table_frame.setStyleSheet(
             "QFrame{"
@@ -83,7 +81,7 @@ class SourceCodesPage(QWidget):
         )
         table_frame.setFixedHeight(465)
 
-        self.table = QTableWidget(NUM_ROWS, 2)
+        self.table = QTableWidget(SOURCE_CODE_COUNT, 2)
         self.table.setHorizontalHeaderLabels(["HexCode", "Name"])
 
         # Excel-style table styling
@@ -187,7 +185,7 @@ class SourceCodesPage(QWidget):
 
             # Seed 16 empty rows if DB is empty
             if not rows:
-                for i in range(NUM_ROWS):
+                for i in range(SOURCE_CODE_COUNT):
                     session.add(SourceCode(entry_no=i, name=""))
                 session.commit()
                 rows = session.query(SourceCode).order_by(
@@ -223,7 +221,7 @@ class SourceCodesPage(QWidget):
 
     def _collect(self) -> list:
         rows = []
-        for row in range(NUM_ROWS):
+        for row in range(SOURCE_CODE_COUNT):
             name_item = self.table.item(row, 1)
             rows.append({
                 "entry_no": row,
@@ -284,9 +282,9 @@ class SourceCodesPage(QWidget):
             with open(path, "r") as f:
                 data = json.load(f)
             rows = data.get("source_codes", [])
-            if len(rows) != NUM_ROWS:
+            if len(rows) != SOURCE_CODE_COUNT:
                 QMessageBox.warning(self, "Import Failed",
-                    f"Expected {NUM_ROWS} rows, got {len(rows)}.")
+                    f"Expected {SOURCE_CODE_COUNT} rows, got {len(rows)}.")
                 return
             session = get_session()
             try:

@@ -32,6 +32,7 @@ from PyQt6.QtCore import Qt, QTimer, QDate
 from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
+from import_data.constants import MAX_ANALYSIS_BURNS
 from core.analysis.analysis_worker import AnalysisWorker
 from core.analysis.correction_engine import CorrectionEngine
 from core.persistence.database import get_session
@@ -43,7 +44,7 @@ import csv
 class JobYRunPage(QWidget):
     """Job Y: Special 3-Time Analysis page."""
 
-    MAX_BURNS = 3
+    MAX_BURNS = MAX_ANALYSIS_BURNS
 
     def __init__(self, main_window, group_id: int, group_name: str, job_type: str = "Y"):
         super().__init__()

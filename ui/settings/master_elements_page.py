@@ -1,17 +1,17 @@
 """
 SpectraSoft — Master Elements Settings Page
 
-Fixed table of 45 hardware channels (ITG 1-45).
+Fixed table of the configured hardware channels.
 User can edit Element Name and Wavelength for each channel.
 ITG No. is read-only and serves as the primary key.
 
 Columns:
-- ITG No.: Integrator number (1-45, fixed, read-only)
+- ITG No.: Integrator number (fixed, read-only)
 - Ele. Name: Element symbol/name (editable, may be empty)
 - Wavelength: Wavelength in nm (editable)
 
 Rules:
-- Exactly 45 rows, ITG No. cannot be changed
+- The configured number of rows is fixed; ITG No. cannot be changed
 - Ele. Name may be empty for unused channels
 - The same Ele. Name may appear on multiple ITG channels
   because one element can have multiple physical analytical lines
@@ -34,11 +34,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
+from import_data.constants import ELEMENT_CHANNEL_COUNT
 from core.persistence.database import get_session
 from core.persistence.models import MasterElement
-
-
-NUM_ROWS = 45  # ITG 1 to 45
 
 
 class MasterElementsPage(QWidget):
@@ -107,7 +105,7 @@ class MasterElementsPage(QWidget):
         )
         table_frame.setFixedHeight(465)
 
-        self.table = QTableWidget(NUM_ROWS, 3)
+        self.table = QTableWidget(ELEMENT_CHANNEL_COUNT, 3)
         self.table.setHorizontalHeaderLabels(
             ["ITG No.", "Ele. Name", "Wavelength"]
         )
@@ -172,7 +170,7 @@ class MasterElementsPage(QWidget):
         )
 
         # ── Fill rows with fixed ITG numbers ─────────────────────────────
-        for row in range(NUM_ROWS):
+        for row in range(ELEMENT_CHANNEL_COUNT):
             itg_no = row + 1
 
             # ITG No. column: read-only
@@ -257,13 +255,13 @@ class MasterElementsPage(QWidget):
             ).all()
 
             # Clear existing editable cells
-            for row in range(NUM_ROWS):
+            for row in range(ELEMENT_CHANNEL_COUNT):
                 self.table.item(row, 1).setText("")
                 self.table.item(row, 2).setText("")
 
             # Fill from DB
             for r in rows:
-                if 1 <= r.itg_no <= NUM_ROWS:
+                if 1 <= r.itg_no <= ELEMENT_CHANNEL_COUNT:
                     row = r.itg_no - 1
                     self.table.item(row, 1).setText(r.ele_name or "")
                     self.table.item(row, 2).setText(r.wavelength or "")
@@ -275,7 +273,7 @@ class MasterElementsPage(QWidget):
         """Collect data from table into a list of dictionaries."""
         rows = []
 
-        for row in range(NUM_ROWS):
+        for row in range(ELEMENT_CHANNEL_COUNT):
             name_item = self.table.item(row, 1)
             wl_item = self.table.item(row, 2)
 
@@ -311,11 +309,11 @@ class MasterElementsPage(QWidget):
                 )
                 return False
 
-            if itg < 1 or itg > NUM_ROWS:
+            if itg < 1 or itg > ELEMENT_CHANNEL_COUNT:
                 QMessageBox.warning(
                     self,
                     "Invalid ITG",
-                    f"ITG number {itg} must be between 1 and {NUM_ROWS}."
+                    f"ITG number {itg} must be between 1 and {ELEMENT_CHANNEL_COUNT}."
                 )
                 return False
 
@@ -431,11 +429,11 @@ class MasterElementsPage(QWidget):
                 except (ValueError, TypeError):
                     itg = 0
 
-                if itg < 1 or itg > NUM_ROWS:
+                if itg < 1 or itg > ELEMENT_CHANNEL_COUNT:
                     QMessageBox.warning(
                         self,
                         "Import Failed",
-                        f"Invalid ITG No. '{itg}' – must be between 1 and {NUM_ROWS}."
+                    f"Invalid ITG No. '{itg}' – must be between 1 and {ELEMENT_CHANNEL_COUNT}."
                     )
                     return
 
@@ -463,7 +461,7 @@ class MasterElementsPage(QWidget):
                 itg_map[itg] = (name, wavelength)
 
             # Clear all editable cells first
-            for row in range(NUM_ROWS):
+            for row in range(ELEMENT_CHANNEL_COUNT):
                 self.table.item(row, 1).setText("")
                 self.table.item(row, 2).setText("")
 

@@ -4,6 +4,12 @@ SpectraSoft — Database Models
 
 from sqlalchemy import Column, Integer, String, JSON, DateTime
 from sqlalchemy.sql import func
+from import_data.constants import (
+    ANALYTICAL_GROUP_NAME_MAX_LENGTH,
+    ELEMENT_NAME_MAX_LENGTH,
+    SOURCE_CODE_NAME_MAX_LENGTH,
+    WAVELENGTH_MAX_LENGTH,
+)
 from core.persistence.database import Base
 
 
@@ -11,7 +17,7 @@ class AnalyticalGroup(Base):
     __tablename__ = "analytical_groups"
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
-    name          = Column(String(100), nullable=False, unique=True, index=True)
+    name          = Column(String(ANALYTICAL_GROUP_NAME_MAX_LENGTH), nullable=False, unique=True, index=True)
     display_order = Column(Integer, default=0)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -66,7 +72,7 @@ class SourceCode(Base):
     __tablename__ = "source_codes"
 
     entry_no = Column(Integer, primary_key=True)
-    name = Column(String(100), default="")
+    name = Column(String(SOURCE_CODE_NAME_MAX_LENGTH), default="")
 
     def __repr__(self):
         return f"<SourceCode(entry_no={self.entry_no}, name='{self.name}')>"
@@ -84,8 +90,8 @@ class MasterElement(Base):
     __tablename__ = "master_elements"
 
     itg_no = Column(Integer, primary_key=True)
-    ele_name = Column(String(20), nullable=False)
-    wavelength = Column(String(20), default="")
+    ele_name = Column(String(ELEMENT_NAME_MAX_LENGTH), nullable=False)
+    wavelength = Column(String(WAVELENGTH_MAX_LENGTH), default="")
 
     def __repr__(self):
         return f"<MasterElement(itg_no={self.itg_no}, ele_name='{self.ele_name}')>"

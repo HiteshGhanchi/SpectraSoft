@@ -7,14 +7,14 @@ This page maps hardware channels (ITG) to analytical records, assigns sequences,
 and selects the Internal Standard Element (ISE) reference for each element.
 
 Columns:
-- AR-No.: Auto-numbered 1 to 32
+- AR-No.: Auto-numbered to the configured analytical-channel count
 - ITG: Integrator number from Master Elements table
 - ELE: Element name auto-filled from selected ITG
 - NAME: User-defined report/display name, up to 5 chars
 - SEQ: Sequence assignment, 1, 2, or 3
 - ISE Ref: Internal Standard reference
     0 = no internal standard
-    1-45 = ITG number of reference element
+    configured element-channel range = ITG number of reference element
 
 Important:
 - No hardcoded Master Elements are used.
@@ -29,11 +29,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QSignalBlocker
 
+from import_data.constants import ANALYTICAL_CHANNEL_COUNT
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup, MasterElement
-
-
-MAX_ELEMENTS = 32
 
 
 class ChannelPage(QWidget):
@@ -240,7 +238,7 @@ class ChannelPage(QWidget):
 
         # print("[PAGE3 DEBUG] Creating 32 rows...", flush=True)
 
-        for row in range(MAX_ELEMENTS):
+        for row in range(ANALYTICAL_CHANNEL_COUNT):
             ar_no = row + 1
 
             # AR-No.

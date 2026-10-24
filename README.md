@@ -91,9 +91,12 @@ It is not a substitute for the provider's hardware and maintenance manuals.
 .
 ├── main.py                         # Thin desktop application entry point
 ├── core/
-│   ├── hardware/                   # UART protocol and instrument sequences
-│   │   ├── uart_manager.py
-│   │   ├── sequence_engine.py
+│   ├── hardware/                   # Transport-independent instrument control
+│   │   ├── interfaces/             # Hardware controller and transport contracts
+│   │   ├── protocols/              # MCU/protocol-specific implementations
+│   │   ├── transports/             # UART and future connection transports
+│   │   ├── factory.py              # Selects the configured hardware backend
+│   │   ├── sequence_engine.py      # Protocol-independent burn orchestration
 │   │   └── attenuator_programmer.py
 │   ├── analysis/                   # Background jobs and result corrections
 │   │   ├── analysis_worker.py
@@ -108,10 +111,12 @@ It is not a substitute for the provider's hardware and maintenance manuals.
 │   ├── regression/                 # Standards, working curves, matrix work
 │   └── settings/                   # Master elements and source-code tables
 ├── tools/
+│   ├── check_hardware_connection.py # Safe connection/standby check
 │   └── profile/                    # Stand-alone ADC/ATT profiling tools
 │       ├── profile_task.py
 │       └── profile_gui.py
-├── import_data/                    # Seed/reference JSON data
+├── import_data/
+│   └── constants.py                # Shared domain and hardware constants
 ├── tests/                          # Fast, hardware-free regression tests
 ├── Manual.md                       # QC-E1 domain and operator reference
 ├── requirements.txt
@@ -123,43 +128,83 @@ It is not a substitute for the provider's hardware and maintenance manuals.
 The codebase was reorganized without changing the existing application entry
 points or the database schema.
 
+All shared limits and hardware settings now have one developer-facing home in
+`import_data/constants.py`. This includes analytical capacities, channel and
+source-code counts, attenuator limits, ADC limits, UART settings, protocol
+timings, and source-selection values. Change those values there rather than
+duplicating them inside UI, analysis, or hardware modules.
+
 ### 1. Core modules are grouped by responsibility
 
 The former flat `core/` directory mixed persistence, hardware communication,
 analysis orchestration, and correction logic. The modules now live in focused
 packages:
 
-- `core/hardware/` owns UART access, attenuator programming, and the complete
-  burn sequence.
+- `core/hardware/` owns hardware interfaces, protocol implementations,
+  transports, attenuator programming, and the complete burn sequence.
 - `core/analysis/` owns the Qt worker used by analysis jobs and the analytical
   correction pipeline.
 - `core/persistence/` owns SQLite path resolution, SQLAlchemy setup, and the
   `AnalyticalGroup`, `SourceCode`, and `MasterElement` models.
 
 Imports in the UI and application entry point were updated to use these new
- locations. The package `__init__.py` files are deliberately lightweight so
- importing a submodule does not start Qt, open a serial port, or initialize the
- database as a side effect. There are no compatibility import modules: all
- application code now uses the grouped package paths directly.
+locations. The package `__init__.py` files are deliberately lightweight so
+importing a submodule does not start Qt, open a serial port, or initialize the
+database as a side effect. There are no compatibility import modules: all
+application code now uses the grouped package paths directly.
 
-### 2. Profiling utilities are separated from the desktop application
+### 2. Hardware control is transport- and protocol-independent
+
+The ATmega sketch currently defines a line-oriented UART protocol at **115200
+baud**:
+
+- `O,<port>,<value>` writes a digital output and returns `K`.
+- `I` reads the twelve input pins and returns `D,<value>`.
+- `T,<ms>` starts a non-blocking controller delay and returns `K`.
+- Lines beginning with `#` are diagnostic messages.
+
+That contract is implemented in `core/hardware/protocols/uart_protocol.py`,
+while serial-port operations are isolated in
+`core/hardware/transports/uart_transport.py`. Application services depend on
+the semantic `SpectrometerController` interface instead of sending `O,A,...`
+commands directly.
+
+To add another hardware option:
+
+1. Implement `CommandTransport` if the new option still uses line commands.
+2. Implement `SpectrometerController` if its command protocol differs from
+   the ATmega protocol.
+3. Register the implementation in `core/hardware/factory.py`.
+4. Leave `SequenceEngine`, `AttenuatorProgrammer`, analysis jobs, and UI pages
+   unchanged.
+
+The selected backend can be configured with:
+
+```bash
+SPECTRASOFT_HARDWARE_TRANSPORT=uart
+SPECTRASOFT_HARDWARE_PROTOCOL=uart
+```
+
+The default remains the current UART/ATmega implementation.
+
+### 3. Profiling utilities are separated from the desktop application
 
 The stand-alone Task 5 profiling implementation and its Tk GUI now live under
 `tools/profile/`. The root files `task5_profile.py` and
 `task5_profile_gui.py` remain small compatibility launchers, so existing local
 commands continue to work while the implementation has a clear home.
 
-The profiling GUI now uses the application's `UARTManager` when it needs to
-open hardware itself. The previous reference to the missing `task1_usb_init`
-module was removed.
+The profiling GUI now uses the configured `CommandTransport` factory when it
+needs to open hardware itself. The previous reference to the missing
+`task1_usb_init` module was removed.
 
-### 3. Regression checks were added
+### 4. Regression checks were added
 
 `tests/test_correction_engine.py` covers the correction chain and Page 8 display
 ordering using hardware-free inputs. These checks protect the most important
 calculation boundary while the UI and hardware layers continue to evolve.
 
-### 4. Documentation now explains the architecture
+### 5. Documentation now explains the architecture
 
 This README records the navigation, manual-to-code mapping, package ownership,
 compatibility launchers, and developer workflow. When a new screen is added,
@@ -182,6 +227,25 @@ python -m pip install -r requirements-dev.txt
 ```bash
 python main.py
 ```
+
+### Check the MCU connection
+
+Before running a hardware analysis job, use the connection check. It opens the
+configured controller, waits for the ATmega startup output, sends the standby
+commands, and verifies their `K` acknowledgements before closing the connection:
+
+```bash
+python -m tools.check_hardware_connection
+```
+
+The CH340 adapter is auto-detected by VID/PID. To select a specific port, set:
+
+```bash
+SPECTRASOFT_UART_PORT=/dev/ttyUSB0 python -m tools.check_hardware_connection
+```
+
+On Windows, use a port such as `COM4`. The MCU sketch and the application must
+both use **115200 baud**.
 
 At startup the application creates `data.db` next to the project when running
 from source. A packaged executable stores it beside the executable. The

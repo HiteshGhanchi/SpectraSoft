@@ -1,62 +1,30 @@
-"""
-SpectraSoft — Attenuator Programmer
-Programs attenuator values for all elements.
-"""
+"""Program attenuators through the selected spectrometer controller."""
 
-import time
-from typing import Dict, List, Optional
-from core.hardware.uart_manager import UARTManager
+from typing import Dict, List
+
+from import_data.constants import ELEMENT_CHANNEL_COUNT
+from core.hardware.interfaces.spectrometer import SpectrometerController
+
 
 class AttenuatorProgrammer:
-    """Programs attenuator values for all 45 elements."""
+    """Programs attenuator values for all 45 analytical channels."""
 
-    ATT_OFFSET = 0x40      # att_value 0 → 0x40, 63 → 0x7F
-    TOTAL_ELEMENTS = 45    # ele1...ele45 → indices 0x00...0x2C
-    ELEM_DELAY = 0.100     # 100ms between commands
-
-    def __init__(self, uart: UARTManager):
-        self.uart = uart
+    def __init__(self, controller: SpectrometerController):
+        self.controller = controller
 
     def program_all(self, att_rows: List[Dict]) -> int:
-        """
-        Program attenuator values for all elements.
-
-        Args:
-            att_rows: List of dicts with 'itg_no' and 'att_value'
-
-        Returns:
-            Number of elements successfully programmed.
-        """
+        """Program every channel and return the number accepted by the controller."""
         success_count = 0
+        att_map = {
+            row.get("itg_no", 0): row.get("att_value", 0)
+            for row in att_rows
+        }
 
-        # Sort by ITG No. (primary key)
-        att_map = {}
-        for row in att_rows:
-            itg = row.get("itg_no", 0)
-            att = row.get("att_value", 0)
-            att_map[itg] = att
+        for itg_no in range(1, ELEMENT_CHANNEL_COUNT + 1):
+            att_value = att_map.get(itg_no, 0)
+            print(f"  ele{itg_no}: att={att_value}")
 
-        for idx in range(self.TOTAL_ELEMENTS):
-            itg = idx + 1
-            att_val = att_map.get(itg, 0)
-            att_cmd_byte = att_val + self.ATT_OFFSET
-
-            elem_cmd = f"O,A,{idx:02X}"           # ele1 → 0x00
-            att_cmd = f"O,A,{att_cmd_byte:02X}"   # att 0 → 0x40
-
-            print(f"  ele{itg}: att={att_val} -> {att_cmd}")
-
-            # Select element
-            if not self.uart.send_command(elem_cmd, wait_ack=True):
-                continue
-            time.sleep(self.ELEM_DELAY)
-
-            # Set attenuator (send twice for reliability, like task3)
-            if not self.uart.send_command(att_cmd, wait_ack=True):
-                continue
-            if not self.uart.send_command(att_cmd, wait_ack=True):
-                continue
-
-            success_count += 1
+            if self.controller.set_attenuator(itg_no, att_value):
+                success_count += 1
 
         return success_count

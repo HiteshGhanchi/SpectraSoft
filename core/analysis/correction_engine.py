@@ -25,6 +25,8 @@ Applies the full SpectraSoft correction chain:
 All data is read from the selected Analytical Group.
 """
 
+from import_data.constants import PURITY_TOTAL_PERCENT
+
 
 class CorrectionEngine:
     def __init__(self, group_data: dict):
@@ -404,7 +406,7 @@ class CorrectionEngine:
                 0.0
             )
 
-        base_value = 100.0 - impurity_sum
+        base_value = PURITY_TOTAL_PERCENT - impurity_sum
 
         corrected = dict(concentrations)
 
