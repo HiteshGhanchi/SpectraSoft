@@ -31,6 +31,7 @@ from core.hardware.sequence_engine import SequenceEngine
 from core.hardware.attenuator_programmer import AttenuatorProgrammer
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.working_curve_repository import get_active_coefficients
 
 import pandas as pd
 import os
@@ -232,11 +233,21 @@ class AnalysisWorker(QThread):
             if not group:
                 return None
 
+            active_coefficients = {}
+            for entry in group.page_03_channel or []:
+                element = str(entry.get("name") or entry.get("ele") or "").strip()
+                if not element:
+                    continue
+                active = get_active_coefficients(session, self.group_id, element)
+                if active:
+                    active_coefficients[element.upper()] = active["coefficients"]
+
             return {
                 "group_name": group.name,  
                 "page_01_source": group.page_01_source,
                 "page_02_attenuator": group.page_02_attenuator,
                 "page_03_channel": group.page_03_channel,
+                "page_05_active_coefficients": active_coefficients,
             }
 
         finally:

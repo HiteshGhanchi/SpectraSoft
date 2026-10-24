@@ -45,6 +45,17 @@ from PyQt6.QtCore import Qt
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.models import WorkingCurveMeasurement
+from core.analysis.working_curve_service import (
+    build_calibration_pairs,
+    fit_polynomial,
+    predict_intensity,
+)
+from core.persistence.working_curve_repository import (
+    create_curve_version,
+    list_standards,
+)
+from ui.regression.working_curve_chart import WorkingCurveChart
 
 import csv
 
@@ -234,6 +245,9 @@ class RegressionCalculationPage(QWidget):
 
         outer_layout.addWidget(self.table, stretch=1)
 
+        self.chart = WorkingCurveChart()
+        outer_layout.addWidget(self.chart)
+
         # ── Coefficient Result Label ─────────────────────────────────────
         self.coeff_label = QLabel("a = —     b = —     c = —     d = —")
         self.coeff_label.setFixedHeight(34)
@@ -396,6 +410,32 @@ class RegressionCalculationPage(QWidget):
             if not group:
                 return [], []
 
+            normalized_standards = list_standards(session, self.group_id)
+            if normalized_standards:
+                normalized_measurements = []
+                normalized_values = []
+                for standard in normalized_standards:
+                    values = {
+                        value.element_key: value.known_value
+                        for value in standard.values
+                    }
+                    rows = (
+                        session.query(WorkingCurveMeasurement)
+                        .filter_by(standard_id=standard.id)
+                        .all()
+                    )
+                    intensities = {
+                        row.element_key: row.corrected_intensity for row in rows
+                    }
+                    if intensities:
+                        normalized_measurements.append(
+                            {"sample": standard.sample_name, "intensities": intensities}
+                        )
+                    normalized_values.append(
+                        {"sample": standard.sample_name, "values": values}
+                    )
+                return normalized_measurements, normalized_values
+
             meas_data = group.page_05_wc_measurements or {}
             chem_data = group.page_05_chemical_standards or {}
 
@@ -487,6 +527,9 @@ class RegressionCalculationPage(QWidget):
         Matching is by sample name.
         """
         measurements, standards = self._load_measurements_and_standards()
+        normalized_pairs = build_calibration_pairs(measurements, standards, elem)
+        if normalized_pairs:
+            return normalized_pairs
 
         intensity_by_sample = {}
         chemical_by_sample = {}
@@ -564,9 +607,12 @@ class RegressionCalculationPage(QWidget):
         x = [p["intensity"] for p in pairs]
         y = [p["chemical"] for p in pairs]
 
-        coeff = self._polyfit(x, y, degree)
-
-        return coeff, pairs
+        fit = fit_polynomial(pairs, degree)
+        return {
+            **fit["coefficients"],
+            "r2": fit["r2"],
+            "rmse": fit["rmse"],
+        }, pairs
 
     def _polyfit(self, x_values: list, y_values: list, degree: int) -> dict:
         """
@@ -732,6 +778,18 @@ class RegressionCalculationPage(QWidget):
             "points": len(pairs),
         }
 
+        chart_points = []
+        for pair in pairs:
+            predicted = predict_intensity(coeff, pair["intensity"])
+            chart_points.append(
+                {
+                    **pair,
+                    "predicted": predicted,
+                    "residual": pair["chemical"] - predicted,
+                }
+            )
+        self.chart.set_points(chart_points, coeff)
+
         self._show_coefficients(self.calculated_coeffs[elem])
 
     def _on_file_current(self):
@@ -846,28 +904,23 @@ class RegressionCalculationPage(QWidget):
             if not group:
                 return
 
-            old_data = group.page_05_wc or {}
-
-            old_coefficients = []
-
-            if isinstance(old_data, dict):
-                old_coefficients = old_data.get("coefficients", [])
-
-                if not isinstance(old_coefficients, list):
-                    old_coefficients = []
-
-            page5_rows = self._build_page5_rows_with_coefficients(
-                old_coefficients,
-                coefficient_map
-            )
-
-            group.page_05_wc = {
-                "coefficients": page5_rows,
-                "backup_coefficients": old_coefficients,
-            }
-
-            session.commit()
-
+            for elem, coeff in coefficient_map.items():
+                curve_type = {1: "linear", 2: "quadratic", 3: "cubic"}.get(
+                    int(coeff.get("degree", 1)), "linear"
+                )
+                create_curve_version(
+                    session,
+                    self.group_id,
+                    elem,
+                    curve_type,
+                    coeff,
+                    {"r2": coeff.get("r2"), "rmse": coeff.get("rmse")},
+                    int(coeff.get("points", 0)),
+                )
+            # New candidates remain inactive until the operator explicitly
+            # activates a version from Page 5. Do not overwrite legacy Page 5
+            # JSON here, because correction still uses it as a compatibility
+            # fallback when no normalized active curve exists.
         finally:
             session.close()
 

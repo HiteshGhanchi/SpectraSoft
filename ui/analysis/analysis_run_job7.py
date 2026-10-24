@@ -34,6 +34,7 @@ from core.analysis.analysis_worker import AnalysisWorker
 from core.analysis.correction_engine import CorrectionEngine
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.working_curve_repository import upsert_measurement
 
 import csv
 
@@ -431,7 +432,7 @@ class Job7RunPage(QWidget):
             self.table.setItem(row, 0, elem_item)
 
             if elem in averages:
-                avg_item = QTableWidgetItem(f"{averages:.5f}")
+                avg_item = QTableWidgetItem(f"{averages[elem]:.5f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
@@ -725,6 +726,14 @@ class Job7RunPage(QWidget):
 
             group.page_05_wc_measurements = data
             session.commit()
+
+            upsert_measurement(
+                session,
+                self.group_id,
+                sample,
+                clean_intensities,
+                burn_count,
+            )
 
             return True
 

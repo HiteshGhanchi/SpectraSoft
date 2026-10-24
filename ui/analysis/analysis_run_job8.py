@@ -31,6 +31,7 @@ from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis.analysis_worker import AnalysisWorker
+from core.analysis.drift_service import file_target_values
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
 
@@ -449,7 +450,7 @@ class Job8RunPage(QWidget):
             self.table.setItem(row, 0, elem_item)
 
             if elem in averages:
-                avg_item = QTableWidgetItem(f"{averages:.5f}")
+                avg_item = QTableWidgetItem(f"{averages[elem]:.5f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
@@ -704,29 +705,7 @@ class Job8RunPage(QWidget):
 
             rows = page4["rows"]
 
-            for row in rows:
-                elem_name = str(row.get("name", "")).strip()
-
-                if not elem_name or elem_name not in averages:
-                    continue
-
-                value = f"{float(averages[elem_name]):.5f}"
-
-                h_sample = str(row.get("h_sample", "")).strip().upper()
-                l_sample = str(row.get("l_sample", "")).strip().upper()
-                k_sample = str(row.get("k_sample", "")).strip().upper()
-
-                if h_sample and h_sample != "*" and h_sample == sample:
-                    row["h_target"] = value
-                    updated += 1
-
-                if l_sample and l_sample != "*" and l_sample == sample:
-                    row["l_target"] = value
-                    updated += 1
-
-                if k_sample and k_sample != "*" and k_sample == sample:
-                    row["k_target"] = value
-                    updated += 1
+            updated = file_target_values(rows, sample, averages)
 
             group.page_04_drift = page4
             session.commit()

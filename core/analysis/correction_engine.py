@@ -155,23 +155,21 @@ class CorrectionEngine:
             ELEMENT_NAME_UPPER -> Page 5 coefficient row
         """
         page5 = self.group_data.get("page_05_wc", {})
-
-        if not isinstance(page5, dict):
-            return {}
-
-        rows = page5.get("coefficients", [])
-
-        if not isinstance(rows, list):
-            return {}
-
         lookup = {}
+        if isinstance(page5, dict):
+            rows = page5.get("coefficients", [])
+            if isinstance(rows, list):
+                for row in rows:
+                    for key in ["element", "name", "ele"]:
+                        value = str(row.get(key, "")).strip()
+                        if value:
+                            lookup[self._key(value)] = row
 
-        for row in rows:
-            for key in ["element", "name", "ele"]:
-                value = str(row.get(key, "")).strip()
-
-                if value:
-                    lookup[self._key(value)] = row
+        normalized = self.group_data.get("page_05_active_coefficients", {})
+        if isinstance(normalized, dict):
+            for name, row in normalized.items():
+                if isinstance(row, dict):
+                    lookup[self._key(name)] = row
 
         return lookup
 

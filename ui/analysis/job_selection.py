@@ -68,7 +68,7 @@ class JobSelectionPage(QWidget):
 
         instruction = QLabel(
             "Select an analytical job.\n"
-            "Available now: Job 2, Job 3, Job 5, Job 6, and Job 8."
+            "Available now: Job 2, Job 3, Job 5, Job 6, Job 7, and Job 8."
         )
         instruction.setAlignment(Qt.AlignmentFlag.AlignCenter)
         instruction.setStyleSheet(

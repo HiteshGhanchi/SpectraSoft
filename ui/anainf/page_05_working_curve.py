@@ -49,6 +49,12 @@ from PyQt6.QtCore import Qt
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.working_curve_repository import (
+    activate_curve,
+    list_curves,
+    retire_curve,
+    update_active_curve_coefficients,
+)
 
 
 class WorkingCurvePage(QWidget):
@@ -220,6 +226,30 @@ class WorkingCurvePage(QWidget):
         self.table.itemChanged.connect(self._on_item_changed)
 
         outer_layout.addWidget(self.table, stretch=1)
+
+        self.curve_versions = QTableWidget(0, 6)
+        self.curve_versions.setHorizontalHeaderLabels(
+            ["Curve ID", "Element", "Type", "Status", "Points", "R² / RMSE"]
+        )
+        self.curve_versions.setStyleSheet(
+            "QTableWidget{background:white;color:black;border:1px solid #888888;}"
+            "QHeaderView::section{background:#0078d7;color:white;font-weight:bold;}"
+        )
+        self.curve_versions.setMaximumHeight(150)
+        outer_layout.addWidget(QLabel("WORKING CURVE VERSIONS"))
+        outer_layout.addWidget(self.curve_versions)
+
+        version_buttons = QHBoxLayout()
+        self.activate_curve_button = QPushButton("Activate Selected Curve")
+        self.activate_curve_button.setStyleSheet(self._button_style())
+        self.activate_curve_button.clicked.connect(self._activate_selected_curve)
+        version_buttons.addWidget(self.activate_curve_button)
+        self.retire_curve_button = QPushButton("Retire Selected Curve")
+        self.retire_curve_button.setStyleSheet(self._button_style())
+        self.retire_curve_button.clicked.connect(self._retire_selected_curve)
+        version_buttons.addWidget(self.retire_curve_button)
+        version_buttons.addStretch()
+        outer_layout.addLayout(version_buttons)
 
         # ── Info / Reset Row ─────────────────────────────────────────────
         ctrl_layout = QHBoxLayout()
@@ -558,12 +588,64 @@ class WorkingCurvePage(QWidget):
                     merged_rows = self._merge_page3_with_saved(page3_rows, saved_rows)
 
                     self._populate_table(merged_rows)
+                    self._load_curve_versions()
                     return
 
         finally:
             session.close()
 
         self._populate_table(self._rows_from_page3())
+        self._load_curve_versions()
+
+    def _load_curve_versions(self):
+        session = get_session()
+        try:
+            curves = list_curves(session, self.group_id)
+        finally:
+            session.close()
+        self.curve_versions.setRowCount(len(curves))
+        for index, curve in enumerate(curves):
+            values = [
+                str(curve.id),
+                curve.element_key,
+                curve.curve_type,
+                curve.status,
+                str(curve.point_count),
+                f"{curve.r2 if curve.r2 is not None else '—'} / {curve.rmse if curve.rmse is not None else '—'}",
+            ]
+            for col, value in enumerate(values):
+                self.curve_versions.setItem(index, col, QTableWidgetItem(value))
+
+    def _selected_curve_id(self):
+        row = self.curve_versions.currentRow()
+        if row < 0 or self.curve_versions.item(row, 0) is None:
+            return None
+        try:
+            return int(self.curve_versions.item(row, 0).text())
+        except ValueError:
+            return None
+
+    def _activate_selected_curve(self):
+        curve_id = self._selected_curve_id()
+        if curve_id is None:
+            return
+        session = get_session()
+        try:
+            activate_curve(session, curve_id)
+        finally:
+            session.close()
+        self._load_curve_versions()
+
+    def _retire_selected_curve(self):
+        curve_id = self._selected_curve_id()
+        if curve_id is None:
+            return
+        session = get_session()
+        try:
+            retire_curve(session, curve_id)
+        finally:
+            session.close()
+        self._load_curve_versions()
 
     def _merge_page3_with_saved(self, page3_rows: list, saved_rows: list) -> list:
         saved_lookup = {}
@@ -672,6 +754,13 @@ class WorkingCurvePage(QWidget):
             group = session.get(AnalyticalGroup, self.group_id)
 
             if group:
+                for row in new_data.get("coefficients", []):
+                    update_active_curve_coefficients(
+                        session,
+                        self.group_id,
+                        row.get("element") or row.get("name") or row.get("ele"),
+                        row,
+                    )
                 old_data = group.page_05_wc or {}
                 old_coefficients = []
 

@@ -38,6 +38,7 @@ from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis.analysis_worker import AnalysisWorker
+from core.analysis.drift_service import calculate_k
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
 
@@ -462,7 +463,7 @@ class Job2RecalPage(QWidget):
             self.table.setItem(row, 0, elem_item)
 
             if elem in averages:
-                avg_item = QTableWidgetItem(f"{averages:.5f}")
+                avg_item = QTableWidgetItem(f"{averages[elem]:.5f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
@@ -748,13 +749,11 @@ class Job2RecalPage(QWidget):
                     skipped += 1
                     continue
 
-                denominator = (alpha * i_k) + beta
-
-                if denominator == 0.0:
+                try:
+                    k_coeff = calculate_k(k_target, i_k, alpha, beta)
+                except ValueError:
                     skipped += 1
                     continue
-
-                k_coeff = k_target / denominator
 
                 row["k_coeff"] = f"{k_coeff:.4f}"
 

@@ -55,6 +55,7 @@ from PyQt6.QtCore import Qt
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.persistence.working_curve_repository import list_standards, sync_standards
 
 import csv
 
@@ -399,17 +400,21 @@ class ChemicalStandardsPage(QWidget):
         session = get_session()
 
         try:
-            group = session.get(AnalyticalGroup, self.group_id)
-
-            data = group.page_05_chemical_standards if group else {}
-
-            standards = []
-
-            if isinstance(data, dict):
-                standards = data.get("standards", [])
-
-                if not isinstance(standards, list):
-                    standards = []
+            normalized = list_standards(session, self.group_id)
+            standards = [
+                {
+                    "sample": standard.sample_name,
+                    "values": {
+                        value.element_key: value.known_value
+                        for value in standard.values
+                    },
+                }
+                for standard in normalized
+            ]
+            if not standards:
+                group = session.get(AnalyticalGroup, self.group_id)
+                data = group.page_05_chemical_standards if group else {}
+                standards = data.get("standards", []) if isinstance(data, dict) else []
 
         finally:
             session.close()
@@ -509,6 +514,7 @@ class ChemicalStandardsPage(QWidget):
         session = get_session()
 
         try:
+            sync_standards(session, self.group_id, data["standards"])
             group = session.get(AnalyticalGroup, self.group_id)
 
             if group:

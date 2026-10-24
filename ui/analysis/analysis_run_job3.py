@@ -35,6 +35,7 @@ from PyQt6.QtGui import QTextDocument, QPageLayout
 from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from core.analysis.analysis_worker import AnalysisWorker
+from core.analysis.drift_service import calculate_alpha_beta
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
 
@@ -477,7 +478,7 @@ class Job3RecalPage(QWidget):
             self.table.setItem(row, 0, elem_item)
 
             if elem in averages:
-                avg_item = QTableWidgetItem(f"{averages:.5f}")
+                avg_item = QTableWidgetItem(f"{averages[elem]:.5f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 
@@ -877,14 +878,13 @@ class Job3RecalPage(QWidget):
                     skipped += 1
                     continue
 
-                denom = i_h - i_l
-
-                if denom == 0.0:
+                try:
+                    alpha, beta = calculate_alpha_beta(
+                        h_target, l_target, i_h, i_l
+                    )
+                except ValueError:
                     skipped += 1
                     continue
-
-                alpha = (h_target - l_target) / denom
-                beta = h_target - (alpha * i_h)
 
                 row["alpha"] = f"{alpha:.4f}"
                 row["beta"] = f"{beta:.5f}"

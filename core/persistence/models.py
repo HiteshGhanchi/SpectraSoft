@@ -2,7 +2,21 @@
 SpectraSoft — Database Models
 """
 
-from sqlalchemy import CheckConstraint, Column, Integer, String, JSON, DateTime
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Index,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from import_data.constants import (
     ANALYTICAL_GROUP_NAME_MAX_LENGTH,
@@ -60,6 +74,122 @@ class AnalyticalGroup(Base):
             "name": self.name,
             "display_order": self.display_order,
         }
+
+
+class WorkingStandard(Base):
+    """One group-scoped physical working-curve standard registration."""
+
+    __tablename__ = "working_standards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(
+        Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True
+    )
+    sample_name = Column(String(100), nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    values = relationship(
+        "WorkingStandardValue", back_populates="standard", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint("length(trim(sample_name)) > 0", name="ck_working_standard_name"),
+        UniqueConstraint(
+            "analytical_group_id", "sample_name", name="uq_working_standard_group_sample"
+        ),
+    )
+
+
+class WorkingStandardValue(Base):
+    """Known chemical value for one standard and one analytical element."""
+
+    __tablename__ = "working_standard_values"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    standard_id = Column(Integer, ForeignKey("working_standards.id"), nullable=False, index=True)
+    element_key = Column(String(100), nullable=False)
+    known_value = Column(Float, nullable=False)
+
+    standard = relationship("WorkingStandard", back_populates="values")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "standard_id", "element_key", name="uq_working_standard_value_element"
+        ),
+    )
+
+
+class WorkingCurveMeasurement(Base):
+    """Latest accepted Job 7 corrected intensity per standard and element."""
+
+    __tablename__ = "working_curve_measurements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(
+        Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True
+    )
+    standard_id = Column(Integer, ForeignKey("working_standards.id"), nullable=False, index=True)
+    element_key = Column(String(100), nullable=False)
+    corrected_intensity = Column(Float, nullable=False)
+    burn_count = Column(Integer, nullable=False, default=0)
+    measured_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "standard_id", "element_key", name="uq_working_measurement_standard_element"
+        ),
+    )
+
+
+class WorkingCurve(Base):
+    """Versioned curve metadata for one group and element."""
+
+    __tablename__ = "working_curves"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(
+        Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True
+    )
+    element_key = Column(String(100), nullable=False)
+    name = Column(String(120), nullable=False)
+    curve_type = Column(String(20), nullable=False)
+    status = Column(String(20), nullable=False, default="inactive")
+    point_count = Column(Integer, nullable=False, default=0)
+    r2 = Column(Float)
+    rmse = Column(Float)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    retired_at = Column(DateTime(timezone=True))
+
+    coefficients = relationship(
+        "WorkingCurveCoefficient", back_populates="curve", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_working_curve_active_group_element",
+            "analytical_group_id",
+            "element_key",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+
+class WorkingCurveCoefficient(Base):
+    """Polynomial coefficients for a versioned working curve."""
+
+    __tablename__ = "working_curve_coefficients"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    curve_id = Column(Integer, ForeignKey("working_curves.id"), nullable=False, index=True)
+    a = Column(Float, nullable=False, default=0.0)
+    b = Column(Float, nullable=False, default=0.0)
+    c = Column(Float, nullable=False, default=1.0)
+    d = Column(Float, nullable=False, default=0.0)
+
+    curve = relationship("WorkingCurve", back_populates="coefficients")
 
 
 class InstrumentConfiguration(Base):

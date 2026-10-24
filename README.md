@@ -57,7 +57,7 @@ Application
 │       └── Installed emission unit: HPSG-300 or HVS
 │
 ├── Regression Calculation
-│   └── Operations that calculate curves and coefficients
+│   └── Operations that calculate and version curves and coefficients
 │
 ├── Analysis
 │   └── Jobs 2, 3, 4, 5, 6, 7, 8, X and Y
@@ -80,7 +80,7 @@ Application
 | Chapter 4 — master menu | `ui/main_window.py` |
 | Chapter 5 — analytical information | `ui/anainf/` and `core/persistence/models.py` |
 | Chapter 6 — attenuator sensitivity | `core/hardware/attenuator_programmer.py`, `ui/anainf/page_02_attenuator.py` |
-| Chapter 7 — regression calculation | `ui/regression/` and `core/analysis/correction_engine.py` |
+| Chapter 7 — regression calculation | `ui/regression/`, `core/persistence/working_curve_repository.py`, and `core/analysis/correction_engine.py` |
 | Chapters 8–9 — analysis operations | `ui/analysis/`, `core/analysis/analysis_worker.py`, `core/hardware/sequence_engine.py` |
 | Chapter 10 — report-oriented output | Existing export/report actions in analysis pages; more report screens can be added under `ui/report/` |
 | Chapter 11 — maintenance and hardware support | `core/hardware/` and the maintenance pages as they are implemented |
@@ -89,6 +89,15 @@ Application
 `Manual.md` is the source reference for instrument terminology, sequence
 timing, correction formulas, environmental requirements, and operator safety.
 It is not a substitute for the provider's hardware and maintenance manuals.
+
+### Working-curve storage
+
+Working-curve standards are distinct from H/L/K drift samples. Standards and
+known chemical values are stored in normalized group-scoped tables, Job 7
+measurements are stored against those standards, and each regression filing
+creates a versioned curve. Only one curve version is active per Analytical
+Group and element; activation is explicit. Existing Page 5, standards, and
+Job 7 JSON is retained for compatibility and migrated idempotently at startup.
 
 ## Repository structure
 

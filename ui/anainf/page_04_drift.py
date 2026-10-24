@@ -198,14 +198,30 @@ class DriftCorrectionPage(QWidget):
 
         outer_layout.addWidget(self.table, stretch=1)
 
+        # ── Drift operation actions ──────────────────────────────────────
+        operation_bar = QHBoxLayout()
+        operation_bar.setSpacing(6)
+
+        operation_label = QLabel("Drift calculations:")
+        operation_label.setStyleSheet("color:black;font:bold 9pt Arial;")
+        operation_bar.addWidget(operation_label)
+
+        for text, slot in [
+            ("Job 8: Create Targets", self._open_job8),
+            ("Job 3: Calculate α/β", self._open_job3),
+            ("Job 2: Calculate k", self._open_job2),
+        ]:
+            button = QPushButton(text)
+            button.setStyleSheet(self._button_style())
+            button.clicked.connect(slot)
+            operation_bar.addWidget(button)
+
+        operation_bar.addStretch()
+        outer_layout.addLayout(operation_bar)
+
         # ── Help Note ─────────────────────────────────────────────────────
-        note = QLabel(
-            "Rows are generated from Page 3. H, L, and K sample names are optional "
-            "and are stored in uppercase when entered. Internal Standard rows use '*' "
-            "and are skipped by Job 8. Targets default to 0.00000; "
-            "α=1.0000, β=0.00000, k=1.0000."
-        )
-        note.setFixedHeight(38)
+        note = QLabel(self.drift_help_text())
+        note.setMinimumHeight(58)
         note.setWordWrap(True)
         note.setStyleSheet(
             "QLabel{"
@@ -264,6 +280,18 @@ class DriftCorrectionPage(QWidget):
             "QPushButton:pressed{"
             "border:2px inset #888888;"
             "}"
+        )
+
+    @staticmethod
+    def drift_help_text() -> str:
+        """Explain storage defaults, drift jobs, and physical sample roles."""
+        return (
+            "Storage: H/L/K sample names are optional and uppercase; targets default "
+            "to 0.00000, α=1.0000, β=0.00000, k=1.0000. '*' marks internal-standard "
+            "rows that are skipped. Job 8 measures the configured physical H/L/K drift "
+            "samples and creates targets. Job 3 measures H and L and calculates α/β. "
+            "Job 2 measures K and calculates k. Drift samples are repeatable reference "
+            "samples, not certified working-curve standards."
         )
 
     # =========================================================================
@@ -632,6 +660,24 @@ class DriftCorrectionPage(QWidget):
 
     def _on_print(self):
         self._show_msg("Print", "Print coming soon.")
+
+    def _open_job8(self):
+        from ui.analysis.analysis_run_job8 import Job8RunPage
+        self.main_window.set_right_widget(
+            Job8RunPage(self.main_window, self.group_id, self.group_name, "8")
+        )
+
+    def _open_job3(self):
+        from ui.analysis.analysis_run_job3 import Job3RecalPage
+        self.main_window.set_right_widget(
+            Job3RecalPage(self.main_window, self.group_id, self.group_name, "3")
+        )
+
+    def _open_job2(self):
+        from ui.analysis.analysis_run_job2 import Job2RecalPage
+        self.main_window.set_right_widget(
+            Job2RecalPage(self.main_window, self.group_id, self.group_name, "2")
+        )
 
     def _on_cancel(self):
         if self._show_question(

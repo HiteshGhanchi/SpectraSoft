@@ -327,6 +327,16 @@ class AnalyticalInformationFlowTests(unittest.TestCase):
         att_page.assert_called_once_with(main_window, 1, "TEST")
         self.assertIs(main_window.widget, att_page.return_value)
 
+    def test_drift_page_exposes_storage_defaults_and_calculation_actions(self):
+        from ui.anainf.page_04_drift import DriftCorrectionPage
+
+        help_text = DriftCorrectionPage.drift_help_text()
+
+        self.assertIn("H/L/K", help_text)
+        self.assertIn("Job 8", help_text)
+        self.assertIn("Job 3", help_text)
+        self.assertIn("Job 2", help_text)
+
 
 if __name__ == "__main__":
     unittest.main()
