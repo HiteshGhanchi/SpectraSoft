@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPainter, QPageLayout, QPen, QBrush
+from PyQt6.QtGui import QColor, QPainter, QPageLayout, QPen, QBrush
 from PyQt6.QtPrintSupport import QPrintPreviewDialog, QPrinter
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -39,6 +39,7 @@ from core.analysis.report_service import (
 )
 from core.persistence.database import get_session
 from core.persistence.result_repository import list_analysis_results
+from ui.theme import COLORS
 
 
 class HistogramWidget(QFrame):
@@ -47,8 +48,11 @@ class HistogramWidget(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.histogram = None
+        self.setObjectName("chartSurface")
         self.setMinimumHeight(180)
-        self.setStyleSheet("background:white;border:1px solid #999;")
+        self.setStyleSheet(
+            f"background:{COLORS['surface']};border:1px solid {COLORS['border_strong']};"
+        )
 
     def set_histogram(self, histogram):
         self.histogram = histogram
@@ -65,10 +69,10 @@ class HistogramWidget(QFrame):
         counts = self.histogram.get("counts", [])
         maximum = max(counts or [1])
         bar_width = chart.width() / max(1, len(counts))
-        painter.setPen(QPen(Qt.GlobalColor.black, 1))
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1))
         painter.drawLine(chart.left(), chart.bottom(), chart.right(), chart.bottom())
         painter.drawLine(chart.left(), chart.top(), chart.left(), chart.bottom())
-        painter.setBrush(QBrush(Qt.GlobalColor.darkCyan))
+        painter.setBrush(QBrush(QColor(COLORS["chart_teal"])))
         for index, count in enumerate(counts):
             height = chart.height() * count / maximum
             painter.drawRect(

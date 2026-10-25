@@ -4,6 +4,8 @@ from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
+from ui.theme import COLORS
+
 
 class WorkingCurveChart(QWidget):
     def __init__(self, parent=None):
@@ -11,8 +13,11 @@ class WorkingCurveChart(QWidget):
         self.points = []
         self.target_line = []
         self.residuals = []
+        self.setObjectName("chartSurface")
         self.setMinimumHeight(180)
-        self.setStyleSheet("background:white;border:1px solid #888888;")
+        self.setStyleSheet(
+            f"background:{COLORS['surface']};border:1px solid {COLORS['border_strong']};"
+        )
 
     def set_points(self, points, coefficients):
         del coefficients
@@ -27,9 +32,9 @@ class WorkingCurveChart(QWidget):
     def paintEvent(self, event):
         del event
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("white"))
+        painter.fillRect(self.rect(), QColor(COLORS["surface"]))
         plot = QRectF(42, 12, max(1, self.width() - 54), max(1, self.height() - 28))
-        painter.setPen(QPen(QColor("#777777"), 1))
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1))
         painter.drawRect(plot)
         if not self.points:
             painter.end()
@@ -47,12 +52,12 @@ class WorkingCurveChart(QWidget):
                 plot.bottom() - ((y - low) / span) * plot.height(),
             )
 
-        painter.setPen(QPen(QColor("#55a055"), 1, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(QColor(COLORS["chart_green"]), 1, Qt.PenStyle.DashLine))
         start = point(low, low)
         end = point(high, high)
         painter.drawLine(int(start[0]), int(start[1]), int(end[0]), int(end[1]))
 
-        painter.setPen(QPen(QColor("#0078d7"), 6))
+        painter.setPen(QPen(QColor(COLORS["chart_blue"]), 6))
         for actual, estimate in zip(values, predicted):
             x, y = point(actual, estimate)
             painter.drawPoint(int(x), int(y))

@@ -4,6 +4,8 @@ from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
+from ui.theme import COLORS
+
 
 def normalized_time_positions(history) -> list[float]:
     """Return x-axis positions normalized from the readings' timestamps."""
@@ -25,8 +27,11 @@ class AdjustmentGraphWidget(QWidget):
         super().__init__(parent)
         self.target_band = (0.5, 0.6)
         self.history = []
+        self.setObjectName("chartSurface")
         self.setMinimumHeight(230)
-        self.setStyleSheet("background:white;border:1px solid #888888;")
+        self.setStyleSheet(
+            f"background:{COLORS['surface']};border:1px solid {COLORS['border_strong']};"
+        )
 
     def set_target_band(self, low: float, high: float):
         self.target_band = (float(low), float(high))
@@ -40,10 +45,10 @@ class AdjustmentGraphWidget(QWidget):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("white"))
+        painter.fillRect(self.rect(), QColor(COLORS["surface"]))
 
         plot = QRectF(48, 16, max(1, self.width() - 64), max(1, self.height() - 42))
-        painter.setPen(QPen(QColor("#777777"), 1))
+        painter.setPen(QPen(QColor(COLORS["muted"]), 1))
         painter.drawRect(plot)
 
         low, high = self.target_band
@@ -51,9 +56,9 @@ class AdjustmentGraphWidget(QWidget):
         y_high = self._y_for_value(high, plot)
         painter.fillRect(
             QRectF(plot.left(), y_high, plot.width(), y_low - y_high),
-            QColor(210, 245, 210),
+            QColor(COLORS["green_soft"]),
         )
-        painter.setPen(QPen(QColor("#4a9b4a"), 1, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(QColor(COLORS["chart_green"]), 1, Qt.PenStyle.DashLine))
         painter.drawLine(
             int(plot.left()), int(y_low), int(plot.right()), int(y_low)
         )
@@ -67,7 +72,7 @@ class AdjustmentGraphWidget(QWidget):
 
         values = [float(item[1]) for item in self.history]
         x_positions = normalized_time_positions(self.history)
-        painter.setPen(QPen(QColor("#0078d7"), 2))
+        painter.setPen(QPen(QColor(COLORS["chart_blue"]), 2))
         points = []
         for index, value in enumerate(values):
             x = plot.left() + plot.width() * x_positions[index]
@@ -77,7 +82,7 @@ class AdjustmentGraphWidget(QWidget):
                 int(first[0]), int(first[1]), int(second[0]), int(second[1])
             )
 
-        painter.setPen(QPen(QColor("#d46b00"), 1, Qt.PenStyle.DotLine))
+        painter.setPen(QPen(QColor(COLORS["chart_amber"]), 1, Qt.PenStyle.DotLine))
         previous_att = None
         for index, item in enumerate(self.history):
             att = item[2] if len(item) > 2 else None

@@ -4,12 +4,13 @@ SpectraSoft — Main Window
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QStatusBar, QFrame, QMessageBox
+    QLabel, QStatusBar, QFrame, QMessageBox, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from core.persistence.database import DB_PATH, SessionLocal, engine
 from core.maintenance.service import MaintenanceService
+from ui.theme import harmonize_widget_tree
 
 
 class MainWindow(QMainWindow):
@@ -17,9 +18,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("SpectraSoft")
-
-        # Fixed size — window cannot be resized
-        self.setFixedSize(1100, 680)
+        self.setObjectName("mainWindow")
+        self.setMinimumSize(1200, 720)
+        self.resize(1360, 820)
 
         self._current_action = None
         self._uart = None
@@ -35,31 +36,7 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         mb = self.menuBar()
-        mb.setStyleSheet(
-            "QMenuBar{"
-            "background:#c0b8a8;"
-            "color:#000000;"
-            "border-bottom:1px solid #888888;"
-            "}"
-            "QMenuBar::item{"
-            "background:#c0b8a8;"
-            "color:#000000;"
-            "padding:2px 10px;"
-            "}"
-            "QMenuBar::item:selected{"
-            "background:#0078d7;"
-            "color:#ffffff;"
-            "}"
-            "QMenu{"
-            "background:#ffffff;"
-            "color:#000000;"
-            "border:1px solid #888888;"
-            "}"
-            "QMenu::item:selected{"
-            "background:#0078d7;"
-            "color:#ffffff;"
-            "}"
-        )
+        mb.setObjectName("topMenuBar")
 
         # ── Analytical Group ─────────────────────────────────────────────
         group_m = mb.addMenu("Analytical Group")
@@ -163,6 +140,12 @@ class MainWindow(QMainWindow):
         self.action_result_settings.triggered.connect(self._open_result_settings)
         result_m.addAction(self.action_result_settings)
 
+        guide_m = mb.addMenu("Workflow Guide")
+        self.action_workflow_guide = QAction("Workflow Guide", self)
+        self.action_workflow_guide.setCheckable(True)
+        self.action_workflow_guide.triggered.connect(self._open_workflow_guide)
+        guide_m.addAction(self.action_workflow_guide)
+
         # Default: Analytical Group checked
         self.action_group.setChecked(True)
         self._current_action = self.action_group
@@ -180,7 +163,7 @@ class MainWindow(QMainWindow):
 
     def _build_body(self):
         root = QWidget()
-        root.setStyleSheet("background:#d4d0c8;")
+        root.setObjectName("contentSurface")
         self.setCentralWidget(root)
 
         h = QHBoxLayout(root)
@@ -189,17 +172,23 @@ class MainWindow(QMainWindow):
 
         from ui.anainf.group_panel import GroupPanel
         self._group_panel = GroupPanel(self)
-        self._group_panel.setFixedWidth(230)
+        self._group_panel.setObjectName("navigationRail")
+        self._group_panel.setMinimumWidth(240)
+        self._group_panel.setMaximumWidth(280)
         h.addWidget(self._group_panel)
 
         self._div = QFrame()
+        self._div.setObjectName("shellDivider")
         self._div.setFrameShape(QFrame.Shape.VLine)
         self._div.setFrameShadow(QFrame.Shadow.Sunken)
-        self._div.setStyleSheet("color:#aaaaaa;")
         h.addWidget(self._div)
 
         self._right = QWidget()
-        self._right.setStyleSheet("background:#d4d0c8;")
+        self._right.setObjectName("contentSurface")
+        self._right.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._right_layout = QVBoxLayout(self._right)
         self._right_layout.setContentsMargins(0, 0, 0, 0)
         self._right_layout.setSpacing(0)
@@ -219,6 +208,7 @@ class MainWindow(QMainWindow):
                     item.widget().shutdown_for_navigation()
                 item.widget().deleteLater()
 
+        harmonize_widget_tree(widget)
         self._right_layout.addWidget(widget)
         self._active_right_widget = widget
 
@@ -272,14 +262,12 @@ class MainWindow(QMainWindow):
 
     def _build_status_bar(self):
         sb = QStatusBar()
-        sb.setStyleSheet("background:#d4d0c8; color:#000000;")
+        sb.setObjectName("statusBar")
         self.setStatusBar(sb)
 
         # No automatic hardware connection here.
         self.conn_status_label = QLabel("⚪ Not Connected")
-        self.conn_status_label.setStyleSheet(
-            "padding: 2px 8px; font: 9pt Arial;"
-        )
+        self.conn_status_label.setObjectName("connectionStatusLabel")
         sb.addWidget(self.conn_status_label)
 
     # =========================================================================
@@ -495,6 +483,12 @@ class MainWindow(QMainWindow):
         from ui.anainf.page_10_result_settings import ResultSettingsPage
         self._set_active_menu(self.action_result_settings)
         self.set_right_widget(ResultSettingsPage(self, gid, gname))
+
+    def _open_workflow_guide(self):
+        from ui.help.workflow_guide_page import WorkflowGuidePage
+
+        self._set_active_menu(self.action_workflow_guide)
+        self.set_right_widget(WorkflowGuidePage(self))
 
     # =========================================================================
     # Helpers

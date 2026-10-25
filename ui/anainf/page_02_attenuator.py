@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QFrame, QTableWidget,
     QTableWidgetItem, QAbstractItemView,
-    QMessageBox, QScrollArea
+    QMessageBox, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -281,8 +281,13 @@ class AttenuatorPage(QWidget):
         # Set row count
         table.setRowCount(row_count)
 
-        # Calculate exact table dimensions: 70 + 50 + 80 + 70 + borders
-        table.setFixedWidth(274)  # + 4px for borders
+        # Preserve a readable minimum while allowing each table to use the
+        # available laptop width.
+        table.setMinimumWidth(274)
+        table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
 
         # Height: rows × 27 + header (27) + borders
         table_height = (row_count * 27) + 27 + 3

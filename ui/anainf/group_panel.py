@@ -16,12 +16,8 @@ class GroupPanel(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
-
-        # Background
-        self.setAutoFillBackground(True)
-        p = self.palette()
-        p.setColor(self.backgroundRole(), Qt.GlobalColor.darkGray)
-        self.setPalette(p)
+        self.setObjectName("navigationRail")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
         self._all_groups = []  # Store all groups for filtering
         self._build_ui()
@@ -38,38 +34,23 @@ class GroupPanel(QWidget):
 
         # Title - bigger font
         title = QLabel("Analytical Group")
-        title.setStyleSheet(
-            "QLabel{"
-            "background:#d4d0c8;"
-            "color:#000000;"
-            "border:none;"
-            "font:bold 11pt Arial;"
-            "}"
-        )
+        title.setObjectName("navigationTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(title)
 
         # Search bar
         self._search = QLineEdit()
+        self._search.setObjectName("groupSearch")
         self._search.setPlaceholderText("Search groups...")
-        self._search.setStyleSheet(
-            "QLineEdit{"
-            "background:#ffffff;"
-            "color:#000000;"
-            "border:1px solid #888888;"
-            "font:9pt Arial;"
-            "padding:4px 6px;"
-            "}"
-        )
         self._search.textChanged.connect(self._filter_groups)
         root.addWidget(self._search)
 
         # Panel frame
         panel = QFrame()
+        panel.setObjectName("navigationCard")
         panel.setFrameShape(QFrame.Shape.Box)
-        panel.setFrameShadow(QFrame.Shadow.Raised)
+        panel.setFrameShadow(QFrame.Shadow.Plain)
         panel.setLineWidth(2)
-        panel.setStyleSheet("background:#d4d0c8;")
 
         pl = QVBoxLayout(panel)
         pl.setContentsMargins(6, 6, 6, 6)
@@ -77,22 +58,7 @@ class GroupPanel(QWidget):
 
         # List - no drag and drop, alphabetical order
         self._list = QListWidget()
-        self._list.setStyleSheet(
-            "QListWidget{"
-            "background:#ffffff;"
-            "color:#000000;"
-            "border:1px solid #aaaaaa;"
-            "font:10pt Arial;"
-            "}"
-            "QListWidget::item{"
-            "padding:4px 6px;"
-            "color:#000000;"
-            "}"
-            "QListWidget::item:selected{"
-            "background:#0078d7;"
-            "color:#ffffff;"
-            "}"
-        )
+        self._list.setObjectName("groupList")
         # No drag-and-drop
         self._list.setDragDropMode(QListWidget.DragDropMode.NoDragDrop)
         self._list.itemDoubleClicked.connect(self._on_open)
@@ -105,19 +71,7 @@ class GroupPanel(QWidget):
             ("Copy", self._on_wc_copy),
         ]:
             btn = QPushButton(label)
-            btn.setStyleSheet(
-                "QPushButton{"
-                "background:#d4d0c8;"
-                "color:#000000;"
-                "border:2px outset #aaaaaa;"
-                "font:9pt Arial;"
-                "padding:4px 6px;"
-                "min-width:55px;"
-                "}"
-                "QPushButton:pressed{"
-                "border:2px inset #888888;"
-                "}"
-            )
+            btn.setObjectName("navigationAction")
             btn.clicked.connect(slot)
             pl.addWidget(btn)
 
@@ -203,7 +157,7 @@ class GroupPanel(QWidget):
             Qt.WindowType.WindowCloseButtonHint |
             Qt.WindowType.WindowTitleHint
         )
-        dialog.setStyleSheet("background:#d4d0c8;")
+        dialog.setObjectName("groupDialog")
 
         # Layout
         layout = QVBoxLayout(dialog)
@@ -212,27 +166,12 @@ class GroupPanel(QWidget):
 
         # Label
         label = QLabel("Enter group name:")
-        label.setStyleSheet(
-            "QLabel{"
-            "background:#d4d0c8;"
-            "color:#000000;"
-            "border:none;"
-            "font:9pt Arial;"
-            "}"
-        )
+        label.setObjectName("mutedLabel")
         layout.addWidget(label)
 
         # Input field
         input_field = QLineEdit()
-        input_field.setStyleSheet(
-            "QLineEdit{"
-            "background:#ffffff;"
-            "color:#000000;"
-            "border:1px solid #888888;"
-            "font:9pt Arial;"
-            "padding:4px 6px;"
-            "}"
-        )
+        input_field.setObjectName("groupNameInput")
         input_field.setFocus()
         layout.addWidget(input_field)
 
@@ -241,36 +180,12 @@ class GroupPanel(QWidget):
         btn_layout.setSpacing(8)
 
         ok_btn = QPushButton("OK")
-        ok_btn.setStyleSheet(
-            "QPushButton{"
-            "background:#d4d0c8;"
-            "color:#000000;"
-            "border:2px outset #aaaaaa;"
-            "font:9pt Arial;"
-            "padding:4px 12px;"
-            "min-width:60px;"
-            "}"
-            "QPushButton:pressed{"
-            "border:2px inset #888888;"
-            "}"
-        )
+        ok_btn.setObjectName("primaryButton")
         ok_btn.setDefault(True)
         ok_btn.clicked.connect(dialog.accept)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet(
-            "QPushButton{"
-            "background:#d4d0c8;"
-            "color:#000000;"
-            "border:2px outset #aaaaaa;"
-            "font:9pt Arial;"
-            "padding:4px 12px;"
-            "min-width:60px;"
-            "}"
-            "QPushButton:pressed{"
-            "border:2px inset #888888;"
-            "}"
-        )
+        cancel_btn.setObjectName("secondaryButton")
         cancel_btn.clicked.connect(dialog.reject)
 
         btn_layout.addStretch()

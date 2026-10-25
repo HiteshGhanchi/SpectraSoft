@@ -29,7 +29,7 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QMessageBox, QFileDialog
+    QHeaderView, QAbstractItemView, QMessageBox, QFileDialog, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
@@ -44,6 +44,7 @@ class MasterElementsPage(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.setObjectName("pageSurface")
 
         self.setAutoFillBackground(True)
         p = self.palette()
@@ -64,7 +65,9 @@ class MasterElementsPage(QWidget):
 
         # ── Title Bar ──────────────────────────────────────────────────────
         bar = QLabel("Master Elements")
-        bar.setFixedHeight(24)
+        bar.setObjectName("pageHeader")
+        bar.setMinimumHeight(36)
+        bar.setMaximumHeight(44)
         bar.setContentsMargins(12, 0, 0, 0)
         bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         bar.setStyleSheet(
@@ -92,18 +95,18 @@ class MasterElementsPage(QWidget):
         inner.setPalette(ip)
 
         ml = QVBoxLayout(inner)
+        self.content_layout = ml
         ml.setContentsMargins(20, 16, 20, 12)
         ml.setSpacing(8)
 
         # ── Table Frame ──────────────────────────────────────────────────
         table_frame = QFrame()
-        table_frame.setStyleSheet(
-            "QFrame{"
-            "background:white;"
-            "border:1px solid #888888;"
-            "}"
+        self.table_frame = table_frame
+        table_frame.setObjectName("contentCard")
+        table_frame.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
         )
-        table_frame.setFixedHeight(465)
 
         self.table = QTableWidget(ELEMENT_CHANNEL_COUNT, 3)
         self.table.setHorizontalHeaderLabels(
@@ -145,14 +148,19 @@ class MasterElementsPage(QWidget):
 
         # Column widths
         self.table.setColumnWidth(0, 80)
-        self.table.setColumnWidth(1, 100)
-        self.table.setColumnWidth(2, 100)
+        self.table.setColumnWidth(1, 220)
+        self.table.setColumnWidth(2, 180)
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
 
-        # Disable column resizing
+        # Keep the channel identifier compact while editable fields use the
+        # available laptop width.
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
 
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(
@@ -207,10 +215,11 @@ class MasterElementsPage(QWidget):
         table_layout.setSpacing(0)
         table_layout.addWidget(self.table)
 
-        ml.addWidget(table_frame)
+        ml.addWidget(table_frame, stretch=1)
 
         # ── Buttons ──────────────────────────────────────────────────────
         btn_row = QHBoxLayout()
+        self.button_row = btn_row
         btn_row.setSpacing(6)
 
         btn_style = (
@@ -233,6 +242,7 @@ class MasterElementsPage(QWidget):
             ("Import", self._on_import),
         ]:
             b = QPushButton(label)
+            b.setObjectName("primaryButton" if label == "Save" else "secondaryButton")
             b.setStyleSheet(btn_style)
             b.clicked.connect(slot)
             btn_row.addWidget(b)
