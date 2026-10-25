@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView
 )
 from PyQt6.QtCore import Qt
+import math
 
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
@@ -577,6 +578,28 @@ class MasterCurvePage(QWidget):
         except (TypeError, ValueError):
             return default
 
+    def _validate_rows(self) -> tuple[bool, str]:
+        """Validate master correction settings before saving or navigation."""
+        for row in range(self.table.rowCount()):
+            try:
+                target = float(self._cell_text(row, self.COL_TARGET) or 0.0)
+                d1 = float(self._cell_text(row, self.COL_D1) or 0.0)
+                d2 = float(self._cell_text(row, self.COL_D2) or 0.0)
+                ac = float(self._cell_text(row, self.COL_AC) or 0.0)
+                mc = float(self._cell_text(row, self.COL_MC) or 1.0)
+            except (TypeError, ValueError):
+                return False, f"Row {row + 1}: master values must be numeric."
+
+            values = (target, d1, d2, ac, mc)
+            if any(not math.isfinite(value) for value in values):
+                return False, f"Row {row + 1}: master values must be finite."
+            if d1 < 0 or d2 < 0:
+                return False, f"Row {row + 1}: D1 and D2 cannot be negative."
+            if d2 and d1 > d2:
+                return False, f"Row {row + 1}: D1 cannot be greater than D2."
+
+        return True, ""
+
     # =========================================================================
     # Buttons
     # =========================================================================
@@ -600,10 +623,18 @@ class MasterCurvePage(QWidget):
         self._populate_table(self._rows_from_page3())
 
     def _on_ok(self):
+        valid, message = self._validate_rows()
+        if not valid:
+            self._show_msg("Invalid Master Curve", message, QMessageBox.Icon.Warning)
+            return
         self._save()
         self._show_msg("Saved", "Master curve correction data saved successfully.")
 
     def _on_next(self):
+        valid, message = self._validate_rows()
+        if not valid:
+            self._show_msg("Invalid Master Curve", message, QMessageBox.Icon.Warning)
+            return
         self._save()
 
         try:

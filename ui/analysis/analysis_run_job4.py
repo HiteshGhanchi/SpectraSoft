@@ -506,7 +506,7 @@ class Job4RunPage(QWidget):
             self.table.setItem(row, 0, elem_item)
 
             if elem in averages:
-                avg_item = QTableWidgetItem(f"{averages:.5f}")
+                avg_item = QTableWidgetItem(f"{averages[elem]:.5f}")
                 avg_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
                 self.table.setItem(row, 1, avg_item)
 

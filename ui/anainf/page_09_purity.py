@@ -270,6 +270,7 @@ class PurityCalculationPage(QWidget):
 
         for text, slot in [
             ("OK", self._on_ok),
+            ("Next", self._on_next),
             ("Previous", self._on_pre),
             ("Print", self._on_print),
         ]:
@@ -603,6 +604,16 @@ class PurityCalculationPage(QWidget):
 
         except ImportError:
             pass
+
+    def _on_next(self):
+        if not self._validate():
+            return
+        self._save()
+        from ui.anainf.page_10_result_settings import ResultSettingsPage
+
+        self.main_window.set_right_widget(
+            ResultSettingsPage(self.main_window, self.group_id, self.group_name)
+        )
 
     def _on_print(self):
         self._show_msg("Print", "Print coming soon.")

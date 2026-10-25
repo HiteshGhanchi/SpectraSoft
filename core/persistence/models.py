@@ -233,6 +233,62 @@ class MatrixCorrection(Base):
     )
 
 
+class AnalysisResult(Base):
+    """Filed Job X/Job Y result with traceable method and burn data."""
+
+    __tablename__ = "analysis_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(
+        Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True
+    )
+    job = Column(String(10), nullable=False)
+    sample_name = Column(String(120), nullable=False, index=True)
+    occurred_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    burns = Column(JSON, nullable=False, default=list)
+    averages = Column(JSON, nullable=False, default=dict)
+    final_concentrations = Column(JSON, nullable=False, default=dict)
+    flags = Column(JSON, nullable=False, default=dict)
+    method_snapshot = Column(JSON, nullable=False, default=dict)
+
+
+class ProductSpecification(Base):
+    """Group-scoped product limits used for result flags and reports."""
+
+    __tablename__ = "product_specifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True)
+    product_name = Column(String(120), nullable=False)
+    element_key = Column(String(100), nullable=False)
+    lower_limit = Column(Float)
+    upper_limit = Column(Float)
+    trace_limit = Column(Float)
+
+
+class RControlSetting(Base):
+    """Quadratic repeated-burn width allowance per group and element."""
+
+    __tablename__ = "r_control_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(Integer, ForeignKey("analytical_groups.id"), nullable=False, index=True)
+    element_key = Column(String(100), nullable=False)
+    a = Column(Float, nullable=False, default=0.0)
+    b = Column(Float, nullable=False, default=0.0)
+    c = Column(Float, nullable=False, default=0.0)
+
+
+class ResultCalculationSetting(Base):
+    """Optional result-calculation switches kept separate from group JSON."""
+
+    __tablename__ = "result_calculation_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    analytical_group_id = Column(Integer, ForeignKey("analytical_groups.id"), nullable=False, unique=True)
+    settings = Column(JSON, nullable=False, default=dict)
+
+
 class InstrumentConfiguration(Base):
     """The installed emission-unit configuration for the whole instrument."""
 

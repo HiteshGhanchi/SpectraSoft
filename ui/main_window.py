@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
+from core.persistence.database import DB_PATH, SessionLocal, engine
+from core.maintenance.service import MaintenanceService
 
 
 class MainWindow(QMainWindow):
@@ -142,6 +144,24 @@ class MainWindow(QMainWindow):
             self._open_working_curve_page
         )
         regression_m.addAction(self.action_working_curve_page)
+
+        report_m = mb.addMenu("Report")
+        self.action_report = QAction("Filed Results", self)
+        self.action_report.setCheckable(True)
+        self.action_report.triggered.connect(self._open_report)
+        report_m.addAction(self.action_report)
+
+        maintenance_m = mb.addMenu("Maintenance")
+        self.action_maintenance = QAction("Maintenance and Backup", self)
+        self.action_maintenance.setCheckable(True)
+        self.action_maintenance.triggered.connect(self._open_maintenance)
+        maintenance_m.addAction(self.action_maintenance)
+
+        result_m = mb.addMenu("Result Settings")
+        self.action_result_settings = QAction("Product / R Control / Optional", self)
+        self.action_result_settings.setCheckable(True)
+        self.action_result_settings.triggered.connect(self._open_result_settings)
+        result_m.addAction(self.action_result_settings)
 
         # Default: Analytical Group checked
         self.action_group.setChecked(True)
@@ -441,6 +461,40 @@ class MainWindow(QMainWindow):
                 "Regression",
                 "Working Curve page is not built yet."
             )
+
+    def _open_report(self):
+        gid, gname = self._get_current_group()
+        if gid is None:
+            self._warn_no_group()
+            return
+        from ui.report.result_report_page import ResultReportPage
+        self._set_active_menu(self.action_report)
+        self.set_right_widget(ResultReportPage(self, gid, gname))
+
+    def _open_maintenance(self):
+        from ui.maintenance.maintenance_page import MaintenancePage
+
+        def dispose_database():
+            engine.dispose()
+
+        service = MaintenanceService(SessionLocal)
+        self._set_active_menu(self.action_maintenance)
+        self.set_right_widget(
+            MaintenancePage(
+                service,
+                database_path=DB_PATH,
+                dispose_callback=dispose_database,
+            )
+        )
+
+    def _open_result_settings(self):
+        gid, gname = self._get_current_group()
+        if gid is None:
+            self._warn_no_group()
+            return
+        from ui.anainf.page_10_result_settings import ResultSettingsPage
+        self._set_active_menu(self.action_result_settings)
+        self.set_right_widget(ResultSettingsPage(self, gid, gname))
 
     # =========================================================================
     # Helpers

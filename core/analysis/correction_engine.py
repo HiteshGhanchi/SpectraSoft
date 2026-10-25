@@ -328,7 +328,7 @@ class CorrectionEngine:
         corrected = {}
 
         for elem_name, value in concentrations.items():
-            row = master_rows.get(self._key(elem_name))
+            row = master_rows.get(self._canonical_key(elem_name))
 
             c_value = self._to_float(value, 0.0)
 
@@ -364,7 +364,7 @@ class CorrectionEngine:
             name = str(row.get("name", "")).strip()
 
             if name:
-                lookup[self._key(name)] = row
+                lookup[self._canonical_key(name)] = row
 
         return lookup
 
@@ -418,10 +418,10 @@ class CorrectionEngine:
                 continue
 
             if mark == "+":
-                base_elements.append(name)
+                base_elements.append(self._canonical_key(name))
 
             elif mark == "-":
-                impurity_elements.append(name)
+                impurity_elements.append(self._canonical_key(name))
 
         # Require exactly one base element.
         if len(base_elements) != 1:
@@ -432,10 +432,10 @@ class CorrectionEngine:
         impurity_sum = 0.0
 
         for elem in impurity_elements:
-            impurity_sum += self._get_value_case_insensitive(
+            impurity_sum += self._get_canonical_value(
                 concentrations,
-                self._key(elem),
-                0.0
+                self._canonical_key(elem),
+                0.0,
             )
 
         base_value = PURITY_TOTAL_PERCENT - impurity_sum
@@ -443,9 +443,13 @@ class CorrectionEngine:
         corrected = dict(concentrations)
 
         # Preserve original key style if base already exists.
-        base_existing_key = self._find_existing_key(
-            corrected,
-            self._key(base_name)
+        base_existing_key = next(
+            (
+                key
+                for key in corrected
+                if self._canonical_key(key) == self._canonical_key(base_name)
+            ),
+            None,
         )
 
         if base_existing_key:

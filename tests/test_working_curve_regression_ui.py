@@ -30,6 +30,12 @@ class WorkingCurveRegressionUITests(unittest.TestCase):
         self.assertTrue(hasattr(WorkingCurvePage, "_activate_selected_curve"))
         self.assertTrue(hasattr(WorkingCurvePage, "_retire_selected_curve"))
 
+    def test_master_curve_page_has_validated_numeric_settings(self):
+        from ui.anainf.page_07_master import MasterCurvePage
+
+        self.assertTrue(hasattr(MasterCurvePage, "_validate_rows"))
+        self.assertTrue(hasattr(MasterCurvePage, "_normalize_float_text"))
+
 
 if __name__ == "__main__":
     unittest.main()

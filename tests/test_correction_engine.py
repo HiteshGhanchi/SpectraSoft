@@ -163,6 +163,29 @@ class CorrectionEngineTests(unittest.TestCase):
 
         self.assertEqual(engine.apply_matrix({"Iron": 10.0, "Carbon": 3.0})["Iron"], 16.0)
 
+    def test_master_and_purity_use_page3_display_names_with_canonical_runtime_keys(self):
+        engine = CorrectionEngine(
+            {
+                "page_03_channel": [
+                    {"name": "Iron", "ele": "FE"},
+                    {"name": "Carbon", "ele": "C"},
+                ],
+                "page_07_master": {
+                    "rows": [{"name": "Iron", "ac": 1.0, "mc": 2.0}]
+                },
+                "page_09_purity": {
+                    "calculation": "Y",
+                    "rows": [
+                        {"name": "Iron", "mark": "+"},
+                        {"name": "Carbon", "mark": "-"},
+                    ],
+                },
+            }
+        )
+
+        result = engine.apply_all({"Iron": 10.0, "Carbon": 2.0})
+        self.assertEqual(result["Iron"], 98.0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,6 +65,7 @@ def init_db():
     # print("[DB DEBUG] init_db() started.", flush=True)
 
     from core.persistence import models  # imported here to register tables
+    from core.maintenance import models as maintenance_models  # register maintenance journal
 
     # print("[DB DEBUG] Models imported successfully.", flush=True)
     # print("[DB DEBUG] Creating tables if not exists...", flush=True)

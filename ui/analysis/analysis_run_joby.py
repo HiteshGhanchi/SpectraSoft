@@ -36,7 +36,14 @@ from import_data.constants import MAX_ANALYSIS_BURNS
 from core.analysis.analysis_worker import AnalysisWorker
 from core.analysis.correction_engine import CorrectionEngine
 from core.persistence.database import get_session
-from core.persistence.models import AnalyticalGroup
+from core.persistence.models import (
+    AnalyticalGroup,
+    ProductSpecification,
+    RControlSetting,
+    ResultCalculationSetting,
+)
+from core.persistence.result_repository import file_analysis_result
+from core.analysis.result_evaluation import evaluate_element_flags, evaluate_r_control
 from core.persistence.matrix_correction_repository import (
     get_active_matrix_correction_dicts,
     get_authoritative_matrix_correction_keys,
@@ -252,6 +259,10 @@ class JobYRunPage(QWidget):
         self.btn_reset.setStyleSheet(btn_style)
         self.btn_reset.clicked.connect(self._on_reset)
 
+        self.btn_file_result = QPushButton("File Result")
+        self.btn_file_result.setStyleSheet(btn_style)
+        self.btn_file_result.clicked.connect(self._on_file_result)
+
         self.btn_print = QPushButton("Print")
         self.btn_print.setStyleSheet(btn_style)
         self.btn_print.clicked.connect(self._on_print)
@@ -263,6 +274,7 @@ class JobYRunPage(QWidget):
         btn_layout.addWidget(self.btn_start)
         btn_layout.addWidget(self.btn_stop)
         btn_layout.addWidget(self.btn_reset)
+        btn_layout.addWidget(self.btn_file_result)
         btn_layout.addWidget(self.btn_print)
         btn_layout.addWidget(self.btn_export)
 
@@ -372,6 +384,25 @@ class JobYRunPage(QWidget):
             if not group:
                 return {}
 
+            product_specs = {}
+            for row in session.query(ProductSpecification).filter_by(
+                analytical_group_id=self.group_id
+            ).all():
+                product_specs.setdefault(row.product_name, {})[row.element_key] = {
+                    "lower": row.lower_limit,
+                    "upper": row.upper_limit,
+                    "trace": row.trace_limit,
+                }
+            r_control = {
+                row.element_key: {"a": row.a, "b": row.b, "c": row.c}
+                for row in session.query(RControlSetting).filter_by(
+                    analytical_group_id=self.group_id
+                ).all()
+            }
+            result_settings = session.query(ResultCalculationSetting).filter_by(
+                analytical_group_id=self.group_id
+            ).one_or_none()
+
             return {
                 "page_03_channel": group.page_03_channel or {},
                 "page_04_drift": group.page_04_drift or {},
@@ -386,6 +417,9 @@ class JobYRunPage(QWidget):
                 "page_07_master": group.page_07_master or {},
                 "page_08_display": group.page_08_display or {},
                 "page_09_purity": group.page_09_purity or {},
+                "page_10_product_specs": product_specs,
+                "page_11_r_control": r_control,
+                "page_12_result_settings": result_settings.settings if result_settings else {},
             }
 
         finally:
@@ -638,11 +672,28 @@ class JobYRunPage(QWidget):
 
         final_content = self._apply_content_pipeline(pre_corrected)
 
+        group_data = self._load_group_data_for_correction()
+        flags = evaluate_element_flags(
+            final_content,
+            group_data.get("page_10_product_specs", {}),
+        )
+        burn_values = {
+            element: [burn.get(element) for burn in self.results] + [final_content.get(element)]
+            for element in final_content
+        }
+        flags.update(
+            evaluate_r_control(
+                burn_values,
+                group_data.get("page_11_r_control", {}),
+            )
+        )
+
         self.an_count += 1
         self.tan_count += 1
         self._update_footer_counts()
 
         self.results.append(final_content)
+        self._last_flags = flags
 
         self.st_counter.setText(f"ST No.: {len(self.results)}")
         self._update_table()
@@ -694,6 +745,30 @@ class JobYRunPage(QWidget):
         self.sample_name.setEnabled(True)
         self._update_table()
         self.status_label.setText("Reset. Ready for new sample.")
+
+    def _on_file_result(self):
+        if not self.results:
+            QMessageBox.warning(self, "No Result", "Run at least one burn before filing.")
+            return
+        averages = self._calculate_special_averages()
+        sample = self._current_sample_name()
+        session = get_session()
+        try:
+            method_snapshot = self._load_group_data_for_correction()
+            file_analysis_result(
+                session,
+                self.group_id,
+                "Y",
+                sample,
+                self.results,
+                averages,
+                averages,
+                getattr(self, "_last_flags", {}),
+                method_snapshot,
+            )
+        finally:
+            session.close()
+        self.status_label.setText(f"Filed Job Y result for {sample}.")
 
     # =========================================================================
     # Print / Export
