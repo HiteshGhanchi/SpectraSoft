@@ -353,7 +353,7 @@ atmega2560pro_virtual_ports.ino
 The application and MCU communicate at:
 
 ```text
-115200 baud
+9600 baud
 ```
 
 ### Reset
@@ -936,10 +936,10 @@ The current Job 5 processing is in:
 core/analysis/analysis_worker.py :: _apply_ise_ratio
 ```
 
-For `ISE Ref = 0`, the current implementation uses:
+For `ISE Ref = 0`, the implementation returns the exact MCU ADC value:
 
 ```text
-intensity = ADC / 4095
+intensity = ADC
 ```
 
 For a nonzero ISE reference, it uses:

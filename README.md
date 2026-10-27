@@ -175,7 +175,7 @@ application code now uses the grouped package paths directly.
 
 ### 2. Hardware control is transport- and protocol-independent
 
-The ATmega sketch currently defines a line-oriented UART protocol at **115200
+The ATmega sketch currently defines a line-oriented UART protocol at **9600
 baud**:
 
 - `O,<port>,<value>` writes a digital output and returns `K`.
@@ -265,7 +265,7 @@ SPECTRASOFT_UART_PORT=/dev/ttyUSB0 python -m tools.check_hardware_connection
 ```
 
 On Windows, use a port such as `COM4`. The MCU sketch and the application must
-both use **115200 baud**.
+both use **9600 baud**.
 
 At startup the application creates `data.db` next to the project when running
 from source. A packaged executable stores it beside the executable. The

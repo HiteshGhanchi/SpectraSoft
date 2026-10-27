@@ -38,7 +38,7 @@ class ChannelIdentityTests(unittest.TestCase):
         result = worker._apply_ise_ratio({"AR:1": 100, "AR:2": 200})
 
         self.assertAlmostEqual(result["AR:1"], 50.0)
-        self.assertAlmostEqual(result["AR:2"], 200 / 4095)
+        self.assertEqual(result["AR:2"], 200)
 
     def test_channel_results_expose_value_with_ar_and_itg_metadata(self):
         worker = AnalysisWorker(group_id=1)

@@ -2,7 +2,7 @@
  * Spectroscopy Controller
  * =======================
  * Target : ATmega 2560 Pro
- * Baud   : 115200
+ * Baud   : 9600
  *
  * Command protocol (received from Python):
  *   O,<port>,<value>\n   — set output port  (port = A or B, value = hexadecimal)
@@ -57,7 +57,7 @@ uint8_t      lastPortAValue = 0;       // Used to detect PortA changes for pulse
 // ============================================================================
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   inputString.reserve(128);   // Generous buffer — longest command is ~12 chars
 
   pinMode(DEBUG_LED, OUTPUT);

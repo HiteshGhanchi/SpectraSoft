@@ -481,7 +481,7 @@ class AnalysisWorker(QThread):
 
         Modes:
         1. ISE = 0:
-            normalized intensity = ADC / configured ADC maximum
+            return the exact MCU ADC value (0-4095)
 
         2. ISE > 0:
             relative intensity = element ADC / reference ADC * 100
@@ -537,7 +537,10 @@ class AnalysisWorker(QThread):
                     results[key] = adc_value / ADC_MAX_VALUE
 
             else:
-                results[key] = adc_value / ADC_MAX_VALUE
+                # With no internal-standard reference, Job 5 must expose the
+                # exact ADC value returned by the MCU rather than a 0-1
+                # normalized value.
+                results[key] = adc_value
 
         return results
 

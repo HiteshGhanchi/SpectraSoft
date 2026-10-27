@@ -64,7 +64,7 @@ HVS_ADJUSTMENT_INTEGRATION_MS = 15000
 # ---------------------------------------------------------------------------
 # ATmega/CH340 connection settings
 # ---------------------------------------------------------------------------
-UART_BAUD_RATE = 115200
+UART_BAUD_RATE = 9600
 CH340_VENDOR_ID = 0x1A86
 CH340_PRODUCT_ID = 0x7523
 DEFAULT_UART_PORT = "COM3"
