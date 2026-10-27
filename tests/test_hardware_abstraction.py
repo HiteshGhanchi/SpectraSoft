@@ -71,6 +71,13 @@ class FakeTransport:
         self.connected = False
 
 
+class ADCTransport(FakeTransport):
+    def read_line(self, timeout=1.0):
+        if self.commands and self.commands[-1] == "I":
+            return "D,123"
+        return "K"
+
+
 class HardwareAbstractionTests(unittest.TestCase):
     def test_sequence_engine_uses_semantic_controller_operations(self):
         controller = FakeController()
@@ -106,6 +113,20 @@ class HardwareAbstractionTests(unittest.TestCase):
             ["O,A,C2", "O,A,9E", "O,A,00", "O,B,16"],
         )
         self.assertEqual(transport.commands[-4:], ["O,A,00", "T,100", "O,A,47", "O,A,47"])
+
+    def test_uart_protocol_keeps_same_element_rows_separate_by_ar_number(self):
+        transport = ADCTransport()
+        controller = UARTSpectrometerController(transport)
+
+        results = controller.integrate(
+            25,
+            [
+                {"ar_no": 1, "itg": 3, "ele": "FE"},
+                {"ar_no": 2, "itg": 8, "ele": "FE"},
+            ],
+        )
+
+        self.assertEqual(results, {"AR:1": 123, "AR:2": 123})
 
     def test_uart_protocol_uses_frontend_source_code_directly(self):
         transport = FakeTransport()

@@ -3,12 +3,12 @@ SpectraSoft — Page 3: Order of Analytical Channel & Internal Standard
 
 Simple stable version with debug logging.
 
-This page maps hardware channels (ITG) to analytical records, assigns sequences,
-and selects the Internal Standard Element (ISE) reference for each element.
+This page maps the 32 channel slots (AR) to the 45 master-element ITG records,
+assigns sequences, and selects the Internal Standard Element (ISE) reference.
 
 Columns:
-- AR-No.: Auto-numbered to the configured analytical-channel count
-- ITG: Integrator number from Master Elements table
+- AR-No.: Physical/analytical channel slot, 1–32
+- ITG: Master-element/integrator-line number, 1–45
 - ELE: Element name auto-filled from selected ITG
 - NAME: User-defined report/display name, up to 5 chars
 - SEQ: Sequence assignment, 1, 2, or 3
@@ -17,6 +17,10 @@ Columns:
     configured element-channel range = ITG number of reference element
 
 Important:
+- The same ITG may appear on multiple rows for a channel-skip method; AR keeps
+  those analytical rows distinct.
+- The same element name may appear on multiple rows when different ITGs
+  represent different analytical lines.
 - No hardcoded Master Elements are used.
 - If Master Elements is empty, ITG dropdowns remain empty.
 - W-No / Working Number is intentionally not implemented.
@@ -29,7 +33,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QSignalBlocker
 
-from import_data.constants import ANALYTICAL_CHANNEL_COUNT
+from import_data.constants import ANALYTICAL_CHANNEL_COUNT, ELEMENT_CHANNEL_COUNT
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup, MasterElement
 
@@ -51,7 +55,6 @@ def selected_itg_numbers(data: list[dict]) -> list[int]:
 def validate_channel_data(data: list[dict]) -> tuple[bool, str]:
     """Validate selected ITGs and their sequence assignments."""
     selected_count = 0
-    used_itgs = set()
 
     for index, entry in enumerate(data or []):
         if not isinstance(entry, dict):
@@ -66,13 +69,13 @@ def validate_channel_data(data: list[dict]) -> tuple[bool, str]:
         except (TypeError, ValueError):
             return False, f"AR-No. {index + 1}: ITG must be a valid channel number."
 
-        if itg <= 0:
-            return False, f"AR-No. {index + 1}: ITG must be a valid channel number."
+        if not 1 <= itg <= ELEMENT_CHANNEL_COUNT:
+            return (
+                False,
+                f"AR-No. {index + 1}: ITG must be a physical channel number 1-45.",
+            )
 
         selected_count += 1
-        if itg in used_itgs:
-            return False, f"ITG {itg} is selected more than once."
-        used_itgs.add(itg)
 
         seq = str(entry.get("seq", "")).strip()
         if seq not in {"1", "2", "3"}:
@@ -527,7 +530,7 @@ class ChannelPage(QWidget):
 
         data = []
 
-        for row in self._rows:
+        for row_index, row in enumerate(self._rows):
             itg = row["itg"].currentData()
             ele = row["ele"].text().strip()
             name = row["name"].text().strip()
@@ -536,6 +539,7 @@ class ChannelPage(QWidget):
 
             if itg:
                 data.append({
+                    "ar_no": row_index + 1,
                     "itg": str(itg),
                     "ele": ele,
                     "name": name,

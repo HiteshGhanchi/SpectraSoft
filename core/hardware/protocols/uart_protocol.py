@@ -25,6 +25,7 @@ from import_data.constants import (
     SOURCE_CODE_MIN,
     SOURCE_PORT_CONTROL_BITS,
 )
+from core.analysis.channel_identity import channel_result_key
 from core.hardware.interfaces.spectrometer import SpectrometerController
 from core.hardware.interfaces.transport import CommandTransport
 from core.hardware.transports.uart_transport import UARTTransport
@@ -86,13 +87,12 @@ class UARTSpectrometerController(SpectrometerController):
         if not self._send_command("O,B,16"):
             return results
 
-        for element in elements:
+        for index, element in enumerate(elements):
             try:
                 itg_no = int(element.get("itg", 0))
             except (TypeError, ValueError):
                 continue
 
-            name = element.get("ele", f"ele{itg_no}")
             element_hex = f"{itg_no - 1:02X}"
 
             if not self._send_command(f"O,A,{element_hex}"):
@@ -120,7 +120,7 @@ class UARTSpectrometerController(SpectrometerController):
 
             value = self._read_adc_value()
             if value is not None:
-                results[name] = value
+                results[channel_result_key(element, index)] = value
 
         return results
 
@@ -133,7 +133,7 @@ class UARTSpectrometerController(SpectrometerController):
         return self._send_command("O,A,C2") and self._send_command("O,A,00")
 
     def set_attenuator(self, itg_no: int, att_value: int) -> bool:
-        """Select one ITG channel and write its 0–63 attenuator value."""
+        """Select one master ITG line and write its 0–63 ATT value."""
         if not 1 <= int(itg_no) <= ELEMENT_CHANNEL_COUNT:
             return False
         if not ATTENUATOR_MIN_VALUE <= int(att_value) <= ATTENUATOR_MAX_VALUE:

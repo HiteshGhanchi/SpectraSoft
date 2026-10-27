@@ -7,7 +7,7 @@ from core.hardware.interfaces.spectrometer import SpectrometerController
 
 
 class AttenuatorProgrammer:
-    """Programs attenuator values for all 45 analytical channels."""
+    """Programs attenuator values for all 45 master ITG lines."""
 
     def __init__(self, controller: SpectrometerController):
         self.controller = controller

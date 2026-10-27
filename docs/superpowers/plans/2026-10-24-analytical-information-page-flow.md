@@ -38,9 +38,9 @@
 - Produces `validate_channel_data(data: list[dict]) -> tuple[bool, str]` for pure validation of selected ITGs and SEQ values.
 - Produces `selected_itg_numbers(data: list[dict]) -> list[int]` for ordered selected ITG extraction.
 
-- [ ] **Step 1: Write failing tests** for zero selections, missing/invalid SEQ, duplicate ITGs, valid ordered selections, and malformed/stale ITG values.
+- [ ] **Step 1: Write failing tests** for zero selections, missing/invalid SEQ, repeated ITGs for channel skip, valid ordered selections, and malformed/stale ITG values.
 - [ ] **Step 2: Run the focused tests** with `pytest tests/test_analytical_information_flow.py -q`; verify they fail because the helpers do not exist.
-- [ ] **Step 3: Implement the pure helpers** in `page_03_channel.py`, keeping the existing duplicate and SEQ rules and adding the required at-least-one-selection rule for navigation.
+- [ ] **Step 3: Implement the pure helpers** in `page_03_channel.py`, allowing repeated physical ITGs for channel skip while retaining the SEQ rules and required at-least-one-selection rule for navigation.
 - [ ] **Step 4: Update `ChannelPage._validate_rows`** to use the helper and show the returned warning text.
 - [ ] **Step 5: Run the focused tests** again and verify they pass.
 

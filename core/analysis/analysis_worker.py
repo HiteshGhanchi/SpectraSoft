@@ -29,6 +29,11 @@ from core.hardware.factory import create_spectrometer_controller
 from core.hardware.interfaces.spectrometer import SpectrometerController
 from core.hardware.sequence_engine import SequenceEngine
 from core.hardware.attenuator_programmer import AttenuatorProgrammer
+from core.analysis.channel_identity import (
+    channel_display_name,
+    channel_result_key,
+    normalized_channel_rows,
+)
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
 from core.persistence.working_curve_repository import get_active_coefficients
@@ -168,9 +173,13 @@ class AnalysisWorker(QThread):
 
             sequence = SequenceEngine(controller)
 
+            channel_rows = normalized_channel_rows(
+                self._group_data.get("page_03_channel", [])
+            )
+
             raw_adc_from_mcu = sequence.execute_full_sequence(
                 page1_data=self._group_data.get("page_01_source", {}),
-                page3_data=self._group_data.get("page_03_channel", []),
+                page3_data=channel_rows,
                 progress_cb=lambda s, p: self.progress.emit(s, p)
             )
 
@@ -186,22 +195,31 @@ class AnalysisWorker(QThread):
 
                 # Keep approximate raw_adc as well for reporting/debugging.
                 # The UI displays intensities.
-                raw_adc = self._make_raw_adc_from_display_values(simulated_intensities)
-                results = simulated_intensities
+                raw_adc_by_channel = self._make_raw_adc_from_display_values(
+                    simulated_intensities
+                )
+                intensities_by_channel = simulated_intensities
 
-                overflows = self._check_intensity_overflows(results)
+                overflows = self._check_intensity_overflows(
+                    self._legacy_channel_values(intensities_by_channel, channel_rows)
+                )
 
                 print("[JOB5] MCU raw ADC was read but display data was replaced by Excel.", flush=True)
                 print(f"[JOB5] MCU raw ADC: {raw_adc_from_mcu}", flush=True)
-                print(f"[JOB5] CSV intensities: {results}", flush=True)
+                print(f"[JOB5] CSV intensities: {intensities_by_channel}", flush=True)
 
             else:
                 self.progress.emit("Processing intensities...", 85)
 
-                raw_adc = raw_adc_from_mcu
-                results = self._apply_ise_ratio(raw_adc)
+                raw_adc_by_channel = raw_adc_from_mcu
+                intensities_by_channel = self._apply_ise_ratio(raw_adc_by_channel)
 
-                overflows = self._check_raw_adc_overflows(raw_adc)
+                overflows = self._check_raw_adc_overflows(
+                    self._legacy_channel_values(raw_adc_by_channel, channel_rows)
+                )
+
+            raw_adc = self._legacy_channel_values(raw_adc_by_channel, channel_rows)
+            results = self._legacy_channel_values(intensities_by_channel, channel_rows)
 
             # ── Step 6: Emit result ─────────────────────────────────────
             self.progress.emit("Done!", 100)
@@ -211,6 +229,13 @@ class AnalysisWorker(QThread):
                 "sample": self.params.get("sample_name", "Unknown"),
                 "raw_adc": raw_adc,
                 "intensities": results,
+                "channel_raw_adc": raw_adc_by_channel,
+                "channel_intensities": intensities_by_channel,
+                "channel_results": self._channel_results(
+                    channel_rows,
+                    raw_adc_by_channel,
+                    intensities_by_channel,
+                ),
                 "overflows": overflows,
                 "simulation": SIMULATION_FROM_EXCEL,
             })
@@ -246,11 +271,13 @@ class AnalysisWorker(QThread):
                 if active:
                     active_coefficients[element.upper()] = active["coefficients"]
 
+            channel_rows = normalized_channel_rows(group.page_03_channel)
+
             return {
                 "group_name": group.name,  
                 "page_01_source": group.page_01_source,
                 "page_02_attenuator": group.page_02_attenuator,
-                "page_03_channel": group.page_03_channel,
+                "page_03_channel": channel_rows,
                 "page_05_active_coefficients": active_coefficients,
                 "page_06_matrix": group.page_06_matrix or {},
                 "page_06_active_corrections": get_active_matrix_correction_dicts(
@@ -360,9 +387,9 @@ class AnalysisWorker(QThread):
             []
         )
 
-        itg_to_display = {}
+        itg_to_key = {}
 
-        for entry in page3:
+        for index, entry in enumerate(normalized_channel_rows(page3)):
 
             itg = str(
                 entry.get("itg", "")
@@ -371,13 +398,7 @@ class AnalysisWorker(QThread):
             if not itg:
                 continue
 
-            display_name = (
-                str(entry.get("name", "")).strip()
-                or str(entry.get("ele", "")).strip()
-                or f"ITG{itg}"
-            )
-
-            itg_to_display[itg] = display_name
+            itg_to_key[itg] = channel_result_key(entry, index)
 
         results = {}
 
@@ -388,7 +409,7 @@ class AnalysisWorker(QThread):
             except Exception:
                 continue
 
-            if itg not in itg_to_display:
+            if itg not in itg_to_key:
                 continue
 
             try:
@@ -396,9 +417,7 @@ class AnalysisWorker(QThread):
             except Exception:
                 continue
 
-            display_name = itg_to_display[itg]
-
-            results[display_name] = value
+            results[itg_to_key[itg]] = value
 
         if not results:
             raise ValueError(
@@ -472,8 +491,8 @@ class AnalysisWorker(QThread):
         ise_map = {}
         itg_to_key = {}
 
-        for entry in page3_data:
-            key = self._display_key_for_page3_entry(entry)
+        for index, entry in enumerate(normalized_channel_rows(page3_data)):
+            key = channel_result_key(entry, index)
 
             if not key:
                 continue
@@ -521,6 +540,39 @@ class AnalysisWorker(QThread):
                 results[key] = adc_value / ADC_MAX_VALUE
 
         return results
+
+    def _legacy_channel_values(self, values: dict, channel_rows: list[dict]) -> dict:
+        """Expose the old display-name map without losing AR-keyed values."""
+        legacy = {}
+        for index, entry in enumerate(channel_rows):
+            key = channel_result_key(entry, index)
+            if key not in values:
+                continue
+            legacy[channel_display_name(entry, index)] = values[key]
+        return legacy
+
+    def _channel_results(
+        self,
+        channel_rows: list[dict],
+        raw_adc: dict,
+        intensities: dict,
+    ) -> list[dict]:
+        """Return one result record per AR row for channel-specific consumers."""
+        records = []
+        for index, entry in enumerate(channel_rows):
+            key = channel_result_key(entry, index)
+            if key not in raw_adc and key not in intensities:
+                continue
+            records.append({
+                "ar_no": entry.get("ar_no", index + 1),
+                "itg": entry.get("itg", ""),
+                "ele": entry.get("ele", ""),
+                "name": entry.get("name", ""),
+                "result_key": key,
+                "raw_adc": raw_adc.get(key),
+                "intensity": intensities.get(key),
+            })
+        return records
 
     # =========================================================================
     # Overflow Checks

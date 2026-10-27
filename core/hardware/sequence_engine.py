@@ -50,9 +50,14 @@ class SequenceEngine:
         results = self.controller.integrate(integ_ms, elements)
 
         for idx, element in enumerate(elements):
+            ar_no = element.get("ar_no", idx + 1)
+            itg_no = element.get("itg", "")
             name = element.get("ele", f"ele{element.get('itg', 0)}")
             percent = 20 + int((idx + 1) / len(elements) * 60)
-            self._progress(f"Reading {name}...", percent)
+            self._progress(
+                f"Reading AR {ar_no} / ITG {itg_no}: {name}...",
+                percent,
+            )
 
         return results
 

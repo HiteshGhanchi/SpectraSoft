@@ -154,17 +154,18 @@ class SourceConditionPage(QWidget):
             "border:1px solid #888888;"
             "}"
         )
-        table.setFixedHeight(162)
+        table.setFixedHeight(182)
+        self.sequence_table = table
 
         grid = QGridLayout(table)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(0)
 
         # Column Sizes 
-        col_label = 60       # Row labels
-        col_seq = 140        # Each sequence column
-        col_unit = 40        # Unit column
-        row_h = 27
+        col_label = 70       # Row labels
+        col_seq = 165        # Each sequence column
+        col_unit = 50        # Unit column
+        row_h = 30
 
         # Helper: Blue Header Label
         def hdr(text, w=col_seq):

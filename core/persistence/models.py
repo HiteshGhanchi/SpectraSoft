@@ -335,7 +335,8 @@ class MasterElement(Base):
     Users can add/edit/remove entries from the Settings page.
     Page 02 Attenuator and other pages pull from this table.
 
-    itg_no is the hardware channel identifier.
+    itg_no identifies one of the 45 master-element/integrator-line definitions.
+    Page 3 assigns these definitions to the 32 AR/channel slots.
     """
     __tablename__ = "master_elements"
 

@@ -156,7 +156,8 @@ The MCU does not know whether the client is running Manual Scanning, ATT Adjustm
 The client application must decide:
 
 - which Analytical Group is active;
-- which element/channel is selected;
+- which AR/channel slot (1–32) is active;
+- which master ITG element line (1–45) is assigned to that slot;
 - which source and sequence are used;
 - which ATT is applied;
 - when purge, preburn, integration, and cleaning occur;
@@ -172,7 +173,7 @@ The same MCU commands can therefore support multiple jobs. The job meaning is cr
 
 The generic MCU protocol does not itself explain which Port A or Port B values mean:
 
-- select a physical ITG channel;
+- select the master ITG element line assigned to an AR/channel slot;
 - set ATT;
 - select a source code from `0x0` through `0xF`;
 - control argon;

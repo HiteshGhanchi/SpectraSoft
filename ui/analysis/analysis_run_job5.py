@@ -31,6 +31,11 @@ from PyQt6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from core.analysis.analysis_worker import AnalysisWorker
 from core.persistence.database import get_session
 from core.persistence.models import AnalyticalGroup
+from core.analysis.channel_identity import (
+    channel_display_name,
+    channel_result_key,
+    normalized_channel_rows,
+)
 
 import csv
 
@@ -54,6 +59,7 @@ class Job5RunPage(QWidget):
 
         # Display names loaded from Page 3
         self.element_names = []
+        self.channel_rows = []
 
         # Counters for footer
         self.an_count = 0
@@ -335,15 +341,24 @@ class Job5RunPage(QWidget):
             group = session.get(AnalyticalGroup, self.group_id)
 
             if group and group.page_03_channel:
-                for entry in group.page_03_channel:
-                    name = str(entry.get("name", "")).strip()
-                    ele = str(entry.get("ele", "")).strip()
+                for index, entry in enumerate(
+                    normalized_channel_rows(group.page_03_channel)
+                ):
+                    ar_no = entry.get("ar_no", index + 1)
                     itg = str(entry.get("itg", "")).strip()
+                    display_name = channel_display_name(entry, index)
+                    result_key = channel_result_key(entry, index)
 
-                    display_name = name or ele or (f"ITG{itg}" if itg else "")
+                    if not display_name:
+                        continue
 
-                    if display_name:
-                        self.element_names.append(display_name)
+                    self.channel_rows.append({
+                        "ar_no": ar_no,
+                        "itg": itg,
+                        "label": f"AR {ar_no} | {display_name} | ITG {itg}",
+                        "result_key": result_key,
+                    })
+                    self.element_names.append(display_name)
 
         finally:
             session.close()
@@ -354,7 +369,7 @@ class Job5RunPage(QWidget):
 
     def _update_table(self):
         """Update the results table with all burns."""
-        if not self.element_names:
+        if not self.channel_rows:
             self.table.setRowCount(0)
             self.table.setColumnCount(0)
             self.status_label.setText(
@@ -367,7 +382,7 @@ class Job5RunPage(QWidget):
         # Columns: Element, AVE, N=1, N=2, ...
         num_cols = 2 + num_burns
 
-        self.table.setRowCount(len(self.element_names))
+        self.table.setRowCount(len(self.channel_rows))
         self.table.setColumnCount(num_cols)
 
         headers = ["Element", "AVE"]
@@ -383,15 +398,15 @@ class Job5RunPage(QWidget):
         for i in range(num_burns):
             self.table.setColumnWidth(2 + i, 90)
 
-        for row, elem in enumerate(self.element_names):
-            elem_item = QTableWidgetItem(elem)
+        for row, channel in enumerate(self.channel_rows):
+            elem_item = QTableWidgetItem(channel["label"])
             elem_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table.setItem(row, 0, elem_item)
 
             values = []
 
             for burn in self.results:
-                val = burn.get(elem, 0.0)
+                val = burn.get(channel["result_key"], 0.0)
                 values.append(val)
 
             if values:
@@ -477,10 +492,13 @@ class Job5RunPage(QWidget):
             "sample": "...",
             "raw_adc": {...},
             "intensities": {...},
+            "channel_intensities": {"AR:1": 0.123},
             "overflows": [...]
         }
         """
-        if "intensities" in results:
+        if isinstance(results.get("channel_intensities"), dict):
+            data = results["channel_intensities"]
+        elif "intensities" in results:
             data = results["intensities"]
         elif "raw_adc" in results:
             data = results["raw_adc"]

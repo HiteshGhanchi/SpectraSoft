@@ -37,14 +37,14 @@ information to the spectrometer.</p>
 <table>
   <tr><th>Area</th><th>Inputs</th><th>Purpose</th></tr>
   <tr><td>Master Elements</td><td>ITG number, element name, wavelength</td>
-      <td>Describe the physical detector/integrator channels.</td></tr>
+      <td>Define the 45 master element/integrator-line records.</td></tr>
   <tr><td>Source Codes</td><td>Hex source identifier, source name</td>
       <td>Define source choices available to Analytical Conditions.</td></tr>
   <tr><td>Analytical Condition</td><td>Purge; SEQ1/2/3 source, preburn,
       integration; clean source and time</td>
       <td>Define how the selected group runs a burn.</td></tr>
-  <tr><td>Channel and ISE Order</td><td>AR-No., ITG, ELE, NAME, SEQ, ISE Ref</td>
-      <td>Select channels for the group and assign their sequence/order.</td></tr>
+  <tr><td>Channel and ISE Order</td><td>AR-No. 1–32, ITG, ELE, NAME, SEQ, ISE Ref</td>
+      <td>Assign the 32 channel slots to master ITG lines.</td></tr>
   <tr><td>ATT Settings</td><td>ATT value per selected ITG channel</td>
       <td>Store the production attenuator value used for the group.</td></tr>
   <tr><td>Result Settings</td><td>Product, R control, optional result settings</td>
@@ -56,20 +56,23 @@ information to the spectrometer.</p>
 physical channel selection in the hardware instruction.</div>
 <table>
   <tr><th>Identifier</th><th>Meaning</th><th>Used in spectrometer instruction?</th></tr>
-  <tr><td>AR-No.</td><td>Analytical position/order within the selected group.</td>
-      <td><b>No.</b> It is client-side ordering information.</td></tr>
-  <tr><td>ITG</td><td>Physical integrator/detector channel number.</td>
-      <td><b>Yes.</b> The UART controller converts it to the channel-select
-      hexadecimal value.</td></tr>
+  <tr><td>AR-No.</td><td>Physical/analytical channel slot (1–32).</td>
+      <td><b>No.</b> It identifies the result slot in the client.</td></tr>
+  <tr><td>ITG</td><td>Master element/integrator-line number (1–45).</td>
+      <td><b>Yes.</b> The UART controller converts it to the hardware
+      selection value.</td></tr>
   <tr><td>Element name</td><td>Software-facing element/result label.</td>
-      <td><b>No.</b> It keys the returned intensity in the result mapping.</td></tr>
+      <td><b>No.</b> It labels the returned value; AR keeps repeated rows separate.</td></tr>
 </table>
-<p>The current channel-select instruction is derived from ITG as
+<p>The current master-line select instruction is derived from ITG as
 <code>O,A,&lt;ITG - 1&gt;</code> in hexadecimal. ATT programming also selects the
 channel by ITG first. The exact physical meaning of controller Port A/Port B
 values still requires verified wiring or hardware testing.</p>
 <p><b>AR-No. is not sent to the spectrometer.</b> It remains the client-side
-analytical order used by the selected method.</p>
+channel-slot identity. If the same element is configured on more than one
+ITG line, each AR/channel slot receives its own result key (for example
+<code>AR:1</code> and <code>AR:2</code>) while the hardware still selects each
+channel by ITG.</p>
 
 <h2>4. Measurement sequence</h2>
 <ol>

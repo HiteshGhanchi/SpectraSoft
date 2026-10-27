@@ -1,12 +1,12 @@
 """
 SpectraSoft — Master Elements Settings Page
 
-Fixed table of the configured hardware channels.
-User can edit Element Name and Wavelength for each channel.
+Fixed table of the 45 master-element/integrator-line definitions.
+User can edit Element Name and Wavelength for each ITG definition.
 ITG No. is read-only and serves as the primary key.
 
 Columns:
-- ITG No.: Integrator number (fixed, read-only)
+- ITG No.: Master-element/integrator-line number (fixed, read-only)
 - Ele. Name: Element symbol/name (editable, may be empty)
 - Wavelength: Wavelength in nm (editable)
 
@@ -14,14 +14,15 @@ Rules:
 - The configured number of rows is fixed; ITG No. cannot be changed
 - Ele. Name may be empty for unused channels
 - The same Ele. Name may appear on multiple ITG channels
-  because one element can have multiple physical analytical lines
+  because one element can have multiple analytical lines
   for different concentration ranges.
 
 Example:
 - ITG 2  -> C at 193.0 nm
 - ITG 37 -> C at 165.8 nm
 
-This is valid because both are different physical detector channels.
+This is valid because both are different ITG lines that can be assigned to
+different AR/channel slots on Page 3.
 """
 
 import json

@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -30,16 +30,24 @@ class AnalyticalInformationFlowTests(unittest.TestCase):
         self.assertFalse(valid)
         self.assertIn("seq", message.lower())
 
-    def test_duplicate_channels_are_invalid(self):
+    def test_same_itg_can_repeat_for_channel_skip(self):
         valid, message = validate_channel_data(
             [
                 {"itg": "4", "seq": "1"},
                 {"itg": "4", "seq": "2"},
+                {"itg": "4", "seq": "1"},
             ]
         )
 
+        self.assertEqual((valid, message), (True, ""))
+
+    def test_itg_must_be_a_physical_channel_in_the_master_range(self):
+        valid, message = validate_channel_data(
+            [{"itg": "46", "seq": "1"}]
+        )
+
         self.assertFalse(valid)
-        self.assertIn("more than once", message.lower())
+        self.assertIn("1-45", message)
 
     def test_valid_channels_preserve_order(self):
         data = [
@@ -49,6 +57,14 @@ class AnalyticalInformationFlowTests(unittest.TestCase):
 
         self.assertEqual(validate_channel_data(data), (True, ""))
         self.assertEqual(selected_itg_numbers(data), [8, 3])
+
+    def test_same_element_can_use_two_different_master_itg_lines(self):
+        data = [
+            {"itg": "3", "ele": "FE", "seq": "1"},
+            {"itg": "8", "ele": "FE", "seq": "2"},
+        ]
+
+        self.assertEqual(validate_channel_data(data), (True, ""))
 
     def test_selected_itg_numbers_excludes_malformed_values(self):
         data = [
@@ -336,6 +352,23 @@ class AnalyticalInformationFlowTests(unittest.TestCase):
         self.assertIn("Job 8", help_text)
         self.assertIn("Job 3", help_text)
         self.assertIn("Job 2", help_text)
+
+    def test_source_condition_sequence_table_has_readable_dimensions(self):
+        from ui.anainf.page_01_source import SourceConditionPage
+
+        session = Mock()
+        session.get.return_value = None
+        with patch(
+            "ui.anainf.page_01_source._load_source_options",
+            return_value=["1: Normal Spark"],
+        ), patch(
+            "ui.anainf.page_01_source.get_session",
+            return_value=session,
+        ):
+            page = SourceConditionPage(Mock(), 1, "TEST")
+
+        self.assertGreaterEqual(page.sequence_table.minimumSizeHint().width(), 740)
+        self.assertGreaterEqual(page.sequence_table.minimumSizeHint().height(), 180)
 
 
 if __name__ == "__main__":
